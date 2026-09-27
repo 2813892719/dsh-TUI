@@ -106,6 +106,8 @@ export function LogoV2({
   whale = true,
   whaleIdle = true,
   whaleGirl = false,
+  starred = false,
+  starReveal,
   onStarClick,
   working = false,
   drift,
@@ -142,6 +144,10 @@ export function LogoV2({
    * replaced with better art) takes the slot. Both forms are static, so
    * `whaleIdle` only animates the whale. */
   whaleGirl?: boolean
+  /** 本次会话已经 star 过：彩蛋标题换成「捡到一颗小星星啦」，不再重复求。 */
+  starred?: boolean
+  /** 彩蛋渐显的测试缝：`instant` 时三行一次画全（静态渲染夹具用；真机不传）。 */
+  starReveal?: 'instant'
   /** 求 star 标语那一行被点击时执行（一键 star，与 `/star` / `Alt+S` 同一个
    * 动作）。不传则那一行不可点——只有它出现时才有这个交互。 */
   onStarClick?: () => void
@@ -350,7 +356,28 @@ export function LogoV2({
     // 弹窗这轮没机会弹（回合中等）就留给下一次启动。
     return pending !== null && isHistoricMilestone(pending) ? null : pending
   })
-  const starLine = starMilestone === null ? null : splashStarLine({ usage: usageSnapshot(), keyHint: effectiveComboDisplay('star') })
+  const starLine = starMilestone === null
+    ? null
+    : splashStarLine({ usage: usageSnapshot(), keyHint: effectiveComboDisplay('star'), caught: starred })
+  // 彩蛋的渐显：标题先出，数字一秒后、求星行两秒后各跟一行（只在标语块
+  // 出现时播一次；本次会话已 star 过、或重挂时直接展开）。
+  const starLineActive = starLine !== null
+  const starRevealInstant = starReveal === 'instant'
+  const [revealed, setRevealed] = React.useState(() => (starRevealInstant ? 2 : 0))
+  React.useEffect(() => {
+    if (!starLineActive) return
+    if (starRevealInstant || starred === true) {
+      setRevealed(2)
+      return
+    }
+    const timers = [
+      setTimeout(() => setRevealed(previous => Math.max(previous, 1)), 1000),
+      setTimeout(() => setRevealed(previous => Math.max(previous, 2)), 2000),
+    ]
+    for (const timer of timers) (timer as { unref?: () => void }).unref?.()
+    return () => { for (const timer of timers) clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在标语块出现时播一次
+  }, [starLineActive])
   // 显示过就把这一档记下来，下次启动不再冒出来（同档只求一次）。预览缝
   // （`DSH_TUI_STAR_LINE=1`）不记账——那是给人看效果的，不该消耗档位。
   React.useEffect(() => {
@@ -511,18 +538,30 @@ export function LogoV2({
           </Box>
         )}
       </Box>
-      {/* 求 star 那行整行可点：点一下 = 一次一键 star（与 `/star`、`Alt+S`
-          同一个动作；终端里按 Ctrl/Cmd 点 `GitHub` 那几个字才是开浏览器）。
-          普通欢迎语不可点——只有这一行在邀请用户。 */}
-      <Box marginTop={1} paddingLeft={welcomePad} {...(starLine === null || onStarClick === undefined ? {} : { onClick: onStarClick })}>
+      {/* 求 star 彩蛋整块可点：点一下 = 一次一键 star（与 `/star`、`Alt+S`
+          同一个动作；终端里按 Ctrl/Cmd 点 `Star` 那几个字才是开浏览器）。
+          平时那句欢迎语不可点——只有彩蛋在邀请用户。 */}
+      <Box flexDirection="column" marginTop={1} {...(starLine === null || onStarClick === undefined ? {} : { onClick: onStarClick })}>
         {starLine === null ? (
-          <Text>{sweep(tagline, t, taglineRGB, FLASH, 60)}</Text>
+          <Box paddingLeft={welcomePad}>
+            <Text>{sweep(tagline, t, taglineRGB, FLASH, 60)}</Text>
+          </Box>
         ) : (
-          <Text>
-            {sweep(starLine.lead, t, taglineRGB, FLASH, 60)}
-            {starLine.link}
-            {sweep(starLine.tail, t, taglineRGB, FLASH, 60)}
-          </Text>
+          <>
+            <Box paddingLeft={welcomePad}>
+              <Text>{sweep(starLine.title, t, taglineRGB, FLASH, 60)}</Text>
+            </Box>
+            {revealed >= 1 && (
+              <Box paddingLeft={welcomePad}>
+                <Text dimColor>{starLine.stats}</Text>
+              </Box>
+            )}
+            {revealed >= 2 && starred !== true && starLine.ask !== null && (
+              <Box paddingLeft={welcomePad}>
+                <Text>{starLine.ask}</Text>
+              </Box>
+            )}
+          </>
         )}
       </Box>
     </Box>

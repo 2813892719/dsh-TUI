@@ -702,8 +702,12 @@ const dict = {
   // the rendered width can be measured for centering. English stays short
   // on purpose: without OSC 8 support the link degrades to the 38-column
   // URL, and lead+URL+tail has to fit an 80-column terminal without wrapping.
-  'logo-star-lead': { zh: '已陪你 {{hours}} 小时 · 第 {{launches}} 次打开 —— ', en: '{{hours}}h together · {{launches}} launches — ' },
-  'logo-star-tail': { zh: '顺手点个 star？（点这行或 {{key}} 一键）', en: 'a star would be lovely (click here or {{key}})' },
+  // 开屏求 star 彩蛋（splashEggs.ts + LogoV2）：平时是 logo-tagline，跨里程碑
+  // 时换成"标题 + 数字 + 求星"三行，标题先出、其余两行每秒跟一行。
+  'logo-star-title': { zh: '鲸鱼娘好像在等一颗小星星…… ☆', en: 'The whale girl seems to be waiting for a little star… ☆' },
+  'logo-star-caught': { zh: '鲸鱼娘捡到一颗小星星啦 ✨', en: 'The whale girl caught a little star ✨' },
+  'logo-star-stats': { zh: '已陪你 {{hours}} 小时 · 第 {{launches}} 次打开', en: '{{hours}}h together · launch #{{launches}}' },
+  'logo-star-ask': { zh: '喜欢 dshTUI 的话，顺手点亮一颗 {{star}}？（点这一行或 {{key}} 一键支持）', en: 'If you like dsh-TUI, would you light a {{star}}? (click this line or {{key}})' },
   'cmd-desc-star': { zh: '给这个项目点个 star（用 gh 一键）' },
   'star-ok': { zh: '已 star，谢谢！', en: 'Starred — thank you!' },
   'star-no-gh': {

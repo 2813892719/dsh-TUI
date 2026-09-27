@@ -623,6 +623,8 @@ export function Chat({
    * 只在启动时判定一次——回合进行中、或已有整屏界面在开（如开机首页），
    * 这一轮不弹也**不记账**，留给下一次启动。`starPrompt` 是测试缝：传
    * `null` 显式关闭，传 actions 覆写两个按钮（不跑真 gh、不开真浏览器）。 */
+  /** 本次会话是否已经 star 成功（开屏彩蛋标题切「捡到小星星啦」）。 */
+  const [starred, setStarred] = React.useState(false)
   const [starModal, setStarModal] = React.useState<{ index: number; phase: 'ask' | 'done' } | null>(null)
   // 单发闩：只在第一个"安静的开屏视口"上武装定时器。700ms 窗口内整屏
   // 界面打开 → cleanup 掐掉定时器且**不再重臂**（记账只发生在回调里，
@@ -670,6 +672,7 @@ export function Chat({
         return { kind: 'failed' as const, detail: outcome.detail, url }
       })).then(attempt => {
       if (attempt.kind === 'starred') {
+        setStarred(true)
         // 成功就演一段庆祝（女仆娘接住星星）——`/star`、`Alt+S`、标语点击
         // 都是这一条路。整屏界面开着或回合进行中时弹窗放不下，退回一句
         // 通知，用户至少知道 star 点上了。
@@ -698,8 +701,22 @@ export function Chat({
     // 结局**回传**给它；`/star` 命令那条路仍走 runStarAction 的 notify。
     onStar: (): StarAttempt | Promise<StarAttempt> => {
       const seam = starPrompt?.onStar
-      if (seam !== undefined) return seam()
-      return import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
+      // 成功即把开屏彩蛋切成「捡到星星」版。注意**不要**给返回值再包一层
+      // `.then()`——多一个微任务会让弹窗的"庆祝那一帧"被紧随其后的
+      // Enter 关窗批掉（夹具 C8/C9 实测）。这里只挂副作用、原样返回。
+      const markStarred = (attempt: StarAttempt): StarAttempt => {
+        if (attempt.kind === 'starred') setStarred(true)
+        return attempt
+      }
+      if (seam !== undefined) {
+        const result = seam()
+        if (result instanceof Promise) {
+          void result.then(markStarred)
+          return result
+        }
+        return markStarred(result)
+      }
+      const run = import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
         const url = `https://github.com/${STAR_REPO}`
         const outcome = await starRepo()
         if (outcome.kind === 'starred') return { kind: 'starred' as const }
@@ -707,6 +724,8 @@ export function Chat({
         if (outcome.kind === 'not-authed') return { kind: 'not-authed' as const, url }
         return { kind: 'failed' as const, detail: outcome.detail, url }
       })
+      void run.then(markStarred)
+      return run
     },
     onOpen: () => {
       setStarModal(null)
@@ -4414,6 +4433,7 @@ export function Chat({
           whale={channel.whale}
           whaleIdle={channel.whaleIdle && whaleArtVisible}
           whaleGirl={channel.whaleGirl}
+          starred={starred}
           onStarClick={runStarAction}
           working={channel.working}
           // Resuming a long session skips the ~3.4s opening animation: it
