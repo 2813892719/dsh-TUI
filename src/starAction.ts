@@ -28,6 +28,13 @@ export type StarOutcome =
 const GH_VERSION_ARGS = ['--version'] as const
 /** 判定登录态：`gh auth status` 退出码非 0 就是没登录。 */
 const GH_AUTH_ARGS = ['auth', 'status'] as const
+/**
+ * 点 star 的本体：`gh api -X PUT user/starred/<owner>/<repo>`。**不用**
+ * `gh repo star`——那是 gh ≥ 2.63 才有的子命令，老版本直接报
+ * `unknown command "star" for "gh repo"`（本机实测踩坑）；REST PUT 全
+ * 版本 gh 可用，成功即 204（gh api 对 204 打空 body、退出码 0）。
+ */
+const GH_STAR_ARGS = ['api', '-X', 'PUT', `user/starred/${STAR_REPO}`] as const
 
 /** 执行器签名（测试注入用；生产就是 `execFileNoThrow`）。 */
 export type StarExec = (
@@ -56,7 +63,7 @@ export async function starRepo(options?: { exec?: StarExec; timeoutMs?: number }
   const auth = await exec('gh', GH_AUTH_ARGS, { timeout: 5000 })
   if (auth.code !== 0) return { kind: 'not-authed' }
 
-  const star = await exec('gh', ['repo', 'star', STAR_REPO], { timeout: options?.timeoutMs ?? 15_000 })
+  const star = await exec('gh', GH_STAR_ARGS, { timeout: options?.timeoutMs ?? 15_000 })
   if (star.code === 0) return { kind: 'starred' }
   return { kind: 'failed', detail: summarize(star) }
 }

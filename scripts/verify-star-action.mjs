@@ -4,7 +4,7 @@
  * 钉死四件事：
  *   ① 没装 `gh` → `no-gh`（且不会继续往下跑）；
  *   ② 装了但没登录 → `not-authed`（同样不会去 star）；
- *   ③ 成功 → `starred`，并且 argv **必须是** `repo star <owner>/<repo>`；
+ *   ③ 成功 → `starred`，并且 argv **必须是** `api -X PUT user/starred/<owner>/<repo>`；
  *   ④ 失败/超时 → `failed` + 一句人能看懂的说明（超时单独认出来）。
  *
  * 运行：node --import tsx/esm scripts/verify-star-action.mjs
@@ -62,8 +62,8 @@ const missing = { code: 1, stdout: '', stderr: '' }
   check('成功 → starred', outcome.kind === 'starred', outcome.kind)
   const star = calls[2]
   check(
-    'argv 必须是 gh repo star <owner>/<repo>',
-    star?.file === 'gh' && star.args.join(' ') === `repo star ${STAR_REPO}`,
+    'argv 必须是 gh api -X PUT user/starred/<owner>/<repo>（全版本 gh 可用；repo star 要 gh ≥ 2.63）',
+    star?.file === 'gh' && star.args.join(' ') === `api -X PUT user/starred/${STAR_REPO}`,
     `${star?.file} ${star?.args.join(' ')}`,
   )
   check('每一步都带超时（不会卡死界面）', calls.every(call => typeof call.timeout === 'number' && call.timeout > 0))

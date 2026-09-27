@@ -1,12 +1,15 @@
 import React from 'react'
-import { Box, Text, useInput, useTerminalSize } from '../ui.js'
+import { Box, Text, useInput, useTerminalImages, useTerminalSize } from '../ui.js'
 import { getLang, subscribeLang, t } from '../i18n.js'
-import { WhaleGirlArt } from './WhaleGirl.js'
+import { MaidPortrait, useMaidPortrait } from './maidPortrait.js'
+import { WhaleArt } from './Whale.js'
 import type { StarMilestone } from '../usageStats.js'
 
-/** Portrait + text side by side need this many columns (art 30 + gap 2 + text
- * 40 + card chrome 6); below that the card drops the art and stacks text. */
-const MIN_ART_COLUMNS = 80
+/** Portrait + text side by side need this many columns (art slot 40 + gap 2 +
+ * text 40 + card chrome 6); below that the card drops the art and stacks
+ * text. The slot stays 40 wide so the raster portrait (30×15) and the pixel
+ * whale fallback (40×13) share one card width. */
+const MIN_ART_COLUMNS = 90
 /** Card height with the art (15 portrait rows + 2 border rows); terminals
  * shorter than this + 2 margin rows get the text-only card. */
 const MIN_ART_ROWS = 19
@@ -33,8 +36,9 @@ export interface StarPromptActions {
  * the milestone, three body lines, two actions — `gh` one-key star or open
  * the repo in a browser — with the selection cursor on the star line and a
  * low-pressure `Esc`-to-dismiss hint on the same row the buttons live in.
- * The maid portrait (`dsh-tui.whaleGirl`'s art) stands to the left whenever
- * the terminal has room for her.
+ * The maid portrait stands to the left whenever the terminal has room and
+ * the image protocols are live (`maidPortrait.tsx`); without them the pixel
+ * whale's standard pose takes the slot — never character blocks.
  */
 export function StarPrompt({
   milestone,
@@ -48,6 +52,8 @@ export function StarPrompt({
 }): React.ReactNode {
   React.useSyncExternalStore(subscribeLang, getLang)
   const { columns, rows } = useTerminalSize()
+  const imagesAvailable = useTerminalImages()
+  const maidSource = useMaidPortrait(imagesAvailable)
   const [selected, setSelected] = React.useState(0)
   // Some terminals report one Enter twice (parsed Return then raw CR); the
   // modal must not fire its action twice for one press.
@@ -72,7 +78,7 @@ export function StarPrompt({
 
   const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
   const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS + 8, columns - 6))
-  const cardColumns = withArt ? 78 : Math.min(columns, textColumns + 6)
+  const cardColumns = withArt ? 88 : Math.min(columns, textColumns + 6)
   const cardRows = withArt ? 17 : 12
   const left = Math.max(0, Math.floor((columns - cardColumns) / 2))
   const bottom = Math.max(0, Math.min(Math.floor((rows - cardRows) / 2), rows - cardRows))
@@ -119,7 +125,17 @@ export function StarPrompt({
         opaque
         onClick={event => { event.stopImmediatePropagation() }}
       >
-        {withArt && <WhaleGirlArt />}
+        {withArt && (
+          // 40 列槽位双档共用：真图立绘（30×15，居中）或像素鲸鱼标准帧
+          //（40×13）——终端图像协议不可用时绝不退到字符块。
+          <Box width={40} height={15} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
+            {imagesAvailable && maidSource !== undefined ? (
+              <MaidPortrait source={maidSource} maxColumns={40} maxRows={15} presentation="preview" />
+            ) : (
+              <WhaleArt width={40} />
+            )}
+          </Box>
+        )}
         <Box flexDirection="column" width={textColumns}>
           <Text color="accent" bold wrap="wrap">{title}</Text>
           <Box height={1} />

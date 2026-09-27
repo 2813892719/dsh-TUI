@@ -2,10 +2,10 @@
  * 女仆娘立绘 + "求 star" 开屏弹窗回归：
  *   A. channel 语义：`dsh-tui.whaleGirl` 默认关、显式开、setWhaleGirl
  *      只在变化时通知；
- *   B. 头部渲染（真实 LogoHeader → LogoV2）：maid 档画女仆娘（两个女仆
- *      专属色都在）且不再画鲸鱼描边；默认档仍是鲸鱼；`whale:false` 时
- *      女仆娘也不画（文字列保留）；48 列鲸鱼独占档在 maid 档下保持
- *      「只画立绘、整列文字不画」的阶梯契约；
+ *   B. 头部渲染（真实 LogoHeader）：立绘走终端图像协议（Kitty/Sixel），
+ *      夹具终端没有图形能力 → maid 档**必须回落成像素鲸鱼**（描边色在、
+ *      文字列在、阶梯契约不动）；whale:false 时艺术整列不画；发行资产
+ *      能解出方形 RGBA（sharp 缺席时显式跳过）；
  *   C. 弹窗（挂真实 Chat + fake channel）：99h 档开屏弹一次（标题/正文/
  *      两颗按钮/▸ 光标/女仆娘），标语行让位（「已陪你」不出现），账本
  *      记到下一档；连按两次 Enter 只触发一次 star 动作（去重守卫）；
@@ -94,10 +94,8 @@ const plainText = (frames: readonly string[]) => frames
   .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
   .replace(/\x1b\]9;[^\x07]*\x07/g, '')
 
-// 女仆娘专属色（取自 whaleGirlSprite 的发色与高光，鲸鱼六色调里没有），
-// 鲸鱼侧用描边色互证「换了画的是谁」。
-const MAID_HAIR = '\x1b[38;2;43;56;120m'
-const MAID_WHITE = '\x1b[38;2;253;253;253m'
+// 鲸鱼描边色：夹具终端没有图形协议（TerminalImagesContext 默认关），
+// maid 档在夹具里必然回落成像素鲸鱼——这正是要钉住的回落契约。
 const WHALE_OUTLINE = '\x1b[38;2;20;38;96m'
 
 // ── A. channel 语义 ─────────────────────────────────────────────────────────
@@ -161,20 +159,29 @@ async function renderHeader(props: Record<string, unknown>, expect?: (plain: str
   const bothFit = await renderHeader({
     columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true,
   }, plain => plain.includes('dsh-TUI'))
-  check('B1 maid mode paints the portrait, not the whale', bothFit.raw.includes(MAID_HAIR) && bothFit.raw.includes(MAID_WHITE) && !bothFit.raw.includes(WHALE_OUTLINE), 'maid colors / whale outline')
-  check('B2 maid mode keeps the text column', bothFit.plain.includes('dsh-TUI') && bothFit.plain.includes('whale-model-probe'))
+  check('B1 maid mode without terminal graphics falls back to the whale',
+    bothFit.raw.includes(WHALE_OUTLINE), 'whale outline missing')
+  check('B2 maid fallback keeps the text column', bothFit.plain.includes('dsh-TUI') && bothFit.plain.includes('whale-model-probe'))
 
   const defaultArt = await renderHeader({ columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd' })
-  check('B3 default stays the pixel whale', defaultArt.raw.includes(WHALE_OUTLINE) && !defaultArt.raw.includes(MAID_HAIR))
+  check('B3 default stays the pixel whale', defaultArt.raw.includes(WHALE_OUTLINE))
 
   const artOff = await renderHeader({ columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true, whale: false })
-  check('B4 whale:false drops the maid too (text-only header)', !artOff.raw.includes(MAID_HAIR) && !artOff.raw.includes(WHALE_OUTLINE) && artOff.plain.includes('dsh-TUI'))
+  check('B4 whale:false drops the art entirely (text-only header)', !artOff.raw.includes(WHALE_OUTLINE) && artOff.plain.includes('dsh-TUI'))
 
   const whaleOnly = await renderHeader({
     columns: 48, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true,
   }, plain => !plain.includes('dsh-TUI'))
   check('B5 whale-only tier keeps the ladder contract in maid mode',
-    whaleOnly.raw.includes(MAID_HAIR) && !whaleOnly.plain.includes('dsh-TUI') && !whaleOnly.plain.includes('whale-model-probe'))
+    whaleOnly.raw.includes(WHALE_OUTLINE) && !whaleOnly.plain.includes('dsh-TUI') && !whaleOnly.plain.includes('whale-model-probe'))
+
+  // 真图数据面：资产可解出 RGBA（sharp 缺席时显式跳过，不判失败——
+  // sharp 本就是可选依赖，缺它时 UI 的回落路径已由 B1 覆盖）。
+  const { loadMaidPortrait } = await import('../src/components/maidPortrait.js')
+  const portrait = await loadMaidPortrait()
+  if (portrait === undefined) console.log('  - B6 skipped: maid asset or sharp unavailable')
+  else check('B6 the shipped portrait decodes to square RGBA', portrait.width === portrait.height
+    && portrait.width > 0 && portrait.data.byteLength === portrait.width * portrait.height * 4)
 }
 
 // ── C–F. 弹窗（挂真实 Chat） ────────────────────────────────────────────────
@@ -264,7 +271,7 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   check('C3 both actions and the Esc hint render',
     plain.includes('在浏览器中打开 GitHub') && plain.includes('Esc 以后再说'))
   check('C4 selection cursor starts on the star line', plain.includes('▸ 给 dshTUI 一个 Star'))
-  check('C5 the modal carries the maid portrait', chat.stdout.frames.join('').includes(MAID_HAIR))
+  check('C5 the modal carries the pixel whale while graphics are off', chat.stdout.frames.join('').includes(WHALE_OUTLINE))
   check('C6 the passive star line yields to the modal', !plain.includes('已陪你'))
   check('C7 the milestone is marked as asked exactly one tier up', readCelebrated(dir) === 3)
   await sleep(300) // 固定窗:pacing 弹窗画出来≠useInput 已订阅（passive effect 晚于绘制一拍），发键前等订阅就绪

@@ -318,7 +318,7 @@ dsh-TUI ships no generic skills; `/skills` browses skills DSH discovers, and a d
 | New | `/new` | no confirmation — the old session is persisted, always reachable via `/resume`; also clears the resume marker |
 | Resume | `/resume` (same as `/home` `/agentview` `/bg` and `⌸` at the input line start) | the three-in-one **session manager**: `←/→` switch column, type to filter, `Enter` enter, `Ctrl+N` new, `Ctrl+X` stop background session, `★`/`☆` pin. Switching just parks the session, the turn keeps running; a session taken by another terminal shows red and can't be entered (see §2.7) |
 | Rename | `/rename <标题>` | rename immediately and persist (writes a session/title event, readable back in the session manager) |
-| Compact | `/compact` | trigger DSH compaction manually; **rejected mid-turn**; unavailable under minimal preset; the compaction point renders as a Divider summary row |
+| Compact | `/compact` | trigger DSH compaction manually; **rejected mid-turn**; unavailable under minimal preset; the compaction point renders as a Divider summary row. While it runs, a status row stays above the prompt (`Summarizing earlier turns… · reading context… · 12s · Esc cancels`), switching to the live output count (`↓ 1.2k tokens`) once the summary starts streaming; `Esc` (or `Ctrl+C`) aborts it and reports "Compaction cancelled". An automatic mid-turn compaction adds no second row — it badges the working spinner with `compacting` instead |
 | Export | `/export` | export Markdown from the full session log (thinking and tool-call sections), file `dsh-tui-export-<时间戳>.md` in the current session cwd |
 | Clear | `/clear` | clears the view only, never the session log |
 | Stop | session manager `Ctrl+X` | stop the **background** session under the cursor; the session the current terminal is using can't be stopped (exit the whole TUI with `/exit` or double-press `Ctrl+C`) |
@@ -409,7 +409,7 @@ An empty session shows the whale logo area at the top (scrolls away with the con
 
 - **Intro animation** (~3.4 s, three picked each launch, `/deepseek` egg re-rolls): classic / heart / sleep.
 - **Welcome idle animation** (`whaleIdle`, default on): fin, blink, tail wag, sleeps with Z after 10 s idle; **click to show a heart and wake it**.
-- **Maid portrait** (`whaleGirl`, default off): swaps the header's pixel whale for the author-drawn maid (30×15 half blocks, same slot); the portrait is static — idle animation and click hearts do not apply to it.
+- **Maid portrait** (`whaleGirl`, default off): swaps the header's pixel whale for the author-drawn maid, rendered as a **real raster** through the terminal image protocols (Kitty/Sixel) — the art keeps its anti-aliased curves and full palette; terminals without graphics support fall back to the pixel whale, idle animation intact.
 - After the first agent task, it freezes to a static frame (`/new` re-enters the welcome period).
 - Text column right of the whale: `✦ dsh-TUI v版本号` →
   `DEEPSEEK / HARNESS` big text (bold glyphs, both rows the same width, one blank row between) →
@@ -471,7 +471,7 @@ Common items below, full list on the /settings screen:
 | terminalImages | terminal image preview (default on, needs terminal support); takes effect after `/restart`. Off shows text only and skips preview decode, sending images to the model is unaffected |
 | whale | pixel whale header (default on); three intro animations picked per launch (classic/heart/sleep), `/deepseek` egg re-rolls |
 | whaleIdle | whale welcome idle animation (default on): fin/tail/blink, sleeps with Z after 10 s idle; click for a heart. Freezes after the first task |
-| whaleGirl | maid portrait (default off): swaps the header's pixel whale for the author-drawn maid (true-color half blocks, same slot); static art, idle animation does not apply |
+| whaleGirl | maid portrait (default off): swaps the header's pixel whale for the author-drawn maid as a **real raster** (Kitty/Sixel); falls back to the pixel whale without graphics support |
 | diffLayout | Edit/Write diff layout: auto (two columns ≥110 cols) / split / unified |
 | thinkingFold | thinking block: preview (2-3 line preview + folded when settled) / full (expanded to end of turn) |
 | effortDefault | default reasoning effort: auto / off / low / high / max. Start level for new sessions (details below) |

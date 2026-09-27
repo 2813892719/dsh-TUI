@@ -34,9 +34,9 @@ const ERASE_TO_EOL = '\x1b[K'
 const BG_DEFAULT = '\x1b[49m'
 
 /**
- * Half-block row encoder shared by every true-color sprite (the pixel whale
- * here, the maid portrait in `WhaleGirl.tsx`): `pixel(x, y)` returns the
- * color of sprite cell (x, y) or `undefined` for transparent.
+ * Half-block row encoder for true-color letter-grid sprites (the pixel
+ * whale's frames): `pixel(x, y)` returns the color of sprite cell (x, y)
+ * or `undefined` for transparent.
  *
  * Render one sprite to ANSI rows (one per sprite row pair). Consecutive
  * cells sharing one style are run-length encoded; every row spans the full

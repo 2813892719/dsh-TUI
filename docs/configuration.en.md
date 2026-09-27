@@ -64,7 +64,7 @@ A complete common override looks like this:
 | `effort` | normally `max` in the bundle | Reasoning effort applied to every request (validated against the runtime model's levels; invalid levels silently fall back to the adapter default), also shown in the header at startup. Precedence: /settings `effortDefault` (`auto` defers) > this field > the persisted `/effort` choice (`~/.dsh-tui/effort.json`) > the model default |
 | `effortDefault` | unset | Default reasoning effort for new sessions; `auto` defers to `effort`; editable through `/settings` |
 | `whale` / `whaleIdle` | `true` / `true` | Header whale and welcome-page idle animation |
-| `whaleGirl` | `false` | Swap the header's pixel whale for the maid portrait (same 40-column slot, true-color half blocks; the portrait is static, idle animation does not apply) |
+| `whaleGirl` | `false` | Swap the header's pixel whale for the maid portrait as a **real raster** (Kitty/Sixel image protocols; falls back to the pixel whale without them) |
 | `minimal` | `false` | Reduce header decoration and colors |
 | `modes` | built-in trio | Shift+Tab session-mode cycle (plan/sandbox/approval atom bundles); defaults to default → plan → full-access |
 | `activity` | `true` | Show the live activity row |

@@ -5,7 +5,7 @@ import { upstreamDriftSummary, UPSTREAM_VALIDATED_VERSION, type UpstreamDriftSum
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Box, Text, useAnimationFrame, useTerminalSize } from '../ui.js'
+import { Box, Text, useAnimationFrame, useTerminalImages, useTerminalSize } from '../ui.js'
 import { getTheme } from '../theme.js'
 import { useTheme } from './design-system/ThemeProvider.js'
 import { parseRGB } from './Spinner/spinnerUtils.js'
@@ -17,7 +17,7 @@ import { isHistoricMilestone, markStarAsked, pendingStarMilestone, recordLaunch,
 import { stringWidth } from '../ink/stringWidth.js'
 import { BRAND, FLASH, ICE, PALE, sweep } from './shimmer.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
-import { WHALE_GIRL_CENTER, WhaleGirlArt } from './WhaleGirl.js'
+import { MAID_BOX_CENTER, MaidPortrait, useMaidPortrait } from './maidPortrait.js'
 import { OPENING_SEQUENCES, pickOpeningSequence, WHALE_FRAME_INDEX, type OpeningStep, type WhaleIntroId } from './whaleFrames.js'
 import { RESTING_POSE, type WhaleLayerPose } from './whaleLayers.js'
 import {
@@ -128,10 +128,12 @@ export function LogoV2({
   /** Show the pixel whale art (settings `dsh-tui.whale`); off → text-only header. */
   whale?: boolean
   /** Swap the header's pixel whale for the maid portrait (settings
-   * `dsh-tui.whaleGirl`; off by default). The portrait is a static piece in
-   * the same 40-column box — the ladder thresholds don't move — and the
-   * whale-only idle planner/click-hearts stay whale-only, so `whaleIdle`
-   * has nothing to animate in this mode. */
+   * `dsh-tui.whaleGirl`; off by default). The portrait renders through the
+   * terminal image protocols (Kitty/Sixel — `maidPortrait.tsx`), keeping the
+   * art's real raster fidelity; when the terminal cannot (inline mode,
+   * unsupported protocol, decode failure) the header falls back to the
+   * animated pixel whale exactly as before, so `whaleIdle` only loses its
+   * meaning while the raster actually shows. */
   whaleGirl?: boolean
   /** Welcome-phase idle whale behaviors — fin flutters, tail thumps,
    * sleep after inactivity (settings `dsh-tui.whaleIdle`; on by default —
@@ -227,6 +229,14 @@ export function LogoV2({
   // 窄终端阶梯：鲸鱼 + 大字 → 纯大字 → 纯鲸鱼 → 一行纯文字（阈值随字体字身宽度变）。
   const { showWhale, showBigTitle, showPlainTitle } = resolveSplashLayout(columns, { whale, font: titleFont })
 
+  // 女仆娘档走**真图**（Kitty/Sixel 终端图像协议，见 `maidPortrait.tsx`）：
+  // 协议不可用（内联模式、终端不支持）或资产解码失败时，回落成原来的
+  // 像素鲸鱼——闲置动画、点击爱心一切照旧，设置项永远不会让开屏变得比
+  // 鲸鱼更差。`maidImageActive` 只在「真图画出来了」时为真。
+  const imagesAvailable = useTerminalImages(whaleGirl)
+  const maidSource = useMaidPortrait(whaleGirl && imagesAvailable)
+  const maidImageActive = whaleGirl && imagesAvailable && maidSource !== undefined
+
   // Welcome-phase idle behaviors (settings `dsh-tui.whaleIdle`): fin
   // flutters, tail thumps and blinks while idle, and a sleep-Z loop after
   // sustained inactivity — all as INDEPENDENT layers composed per tick
@@ -242,9 +252,9 @@ export function LogoV2({
   const pendingHeartRef = React.useRef(false)
   const tickRef = React.useRef<(() => void) | null>(null)
   React.useEffect(() => {
-    // 女仆娘档没有闲置规划器：立绘是静态的（见 prop 注释），这里多让一个
-    // `whaleGirl` 条件，开屏定格后不给她留任何定时器。
-    if (!settled || !whaleIdle || !showWhale || whaleFrozen || whaleGirl) {
+    // 女仆娘**真图**档没有闲置规划器：立绘是静态光栅（见上），开屏定格
+    // 后不给她留任何定时器；回落成鲸鱼时规划器照常运转。
+    if (!settled || !whaleIdle || !showWhale || whaleFrozen || maidImageActive) {
       setIdlePose(null)
       tickRef.current = null
       return
@@ -277,7 +287,7 @@ export function LogoV2({
       tickRef.current = null
       if (timer !== undefined) clearTimeout(timer)
     }
-  }, [settled, whaleIdle, showWhale, working, whaleFrozen, whaleGirl])
+  }, [settled, whaleIdle, showWhale, working, whaleFrozen, maidImageActive])
   // Render priority: the layered planner pose owns the settled header while
   // it runs (hearts and blinks compose over the body planes). Otherwise a
   // click heart plays as whole heart frames over the intro — or over the
@@ -326,7 +336,7 @@ export function LogoV2({
   // visibly off-center.
   const welcomeWidth = starLine === null ? stringWidth(tagline) : starLine.width
   const welcomePad = showWhale
-    ? Math.max(0, Math.round((whaleGirl ? WHALE_GIRL_CENTER : WHALE_CENTER) - welcomeWidth / 2))
+    ? Math.max(0, Math.round((maidImageActive ? MAID_BOX_CENTER : WHALE_CENTER) - welcomeWidth / 2))
     : 2
 
   // 两行标题各自用字体声明的字距；下排再按 `bottomIndent` 居中——
@@ -348,9 +358,10 @@ export function LogoV2({
               // clicks do nothing. Settled: the layered planner consumes the
               // click on its next tick — run that tick immediately so the
               // heart shows instantly instead of after the current delay.
-              // Intro: the whole-frame heart pass above. The maid portrait
-              // is static art — clicks do nothing there either.
-              if (whaleFrozen || whaleGirl) return
+              // Intro: the whole-frame heart pass above. The maid PORTRAIT
+              // (real raster) is static art — clicks do nothing there; the
+              // whale fallback keeps its hearts.
+              if (whaleFrozen || maidImageActive) return
               if (settled && whaleIdle) {
                 pendingHeartRef.current = true
                 tickRef.current?.()
@@ -361,7 +372,27 @@ export function LogoV2({
             }}
           >
             {whaleGirl ? (
-              <WhaleGirlArt width={WHALE_BOX_WIDTH} />
+              // 固定 15 行高、底色铺满槽位：图片（30×15）与回落鲸鱼（40×13）
+              // 共用同一个盒，真图解码完成换画时头部高度不跳；显式底色也是
+              // Sixel 的不透明衬底（透明像素合成到主题背景色上）。
+              <Box
+                width={WHALE_BOX_WIDTH}
+                height={15}
+                flexDirection="row"
+                justifyContent="center"
+                alignItems="center"
+                backgroundColor="background"
+              >
+                {maidImageActive ? (
+                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={15} presentation="transcript" />
+                ) : (
+                  <WhaleArt
+                    frameIndex={frameIndex}
+                    pose={settled && whaleIdle && !whaleFrozen ? (idlePose ?? RESTING_POSE) : undefined}
+                    width={WHALE_BOX_WIDTH}
+                  />
+                )}
+              </Box>
             ) : (
               <WhaleArt
                 frameIndex={frameIndex}
