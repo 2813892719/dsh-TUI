@@ -207,6 +207,7 @@ export function StarPrompt({
           borderStyle="round"
           borderColor="inactive"
           paddingX={2}
+          backgroundColor={terminalBackground}
         >
           {withArt && (
             <ArtSlot
