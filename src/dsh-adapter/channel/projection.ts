@@ -1025,7 +1025,10 @@ export function createChannelProjection(state: ProjectionState, deps: Projection
         // A manual request already installed its own cancellable row, so this
         // only fills the gap for one this process did not start.
         if ((event as { type: string }).type === 'compaction/start') {
-          if (state.compaction === undefined) {
+          // Replay is settled history, and a process killed between start and
+          // end leaves an unmatched start in the log: painting a row for it
+          // would show a compaction that nothing will ever clear.
+          if (!replaying && state.compaction === undefined) {
             state.compaction = {
               startedAt: typeof event.time === 'number' ? event.time : Date.now(),
               phase: 'prefill',

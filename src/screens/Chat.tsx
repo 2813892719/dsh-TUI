@@ -3924,6 +3924,11 @@ export function Chat({
   // indicator instead of answering with the classic dot.
   const activitySlot = channel.activityEnabled && !channel.minimal
 
+  // An automatic compaction runs INSIDE the turn, so it rides whichever spinner
+  // the slot shows as a badge instead of a second row (the spinner's timer is
+  // the turn's, not the compaction's).
+  const compactionBadge = channel.compaction === undefined ? undefined : t('compact-badge')
+
   // ── Interrupt lane ─────────────────────────────────────────────────────
   // The approval and ask_user_question panels park the agent until the user
   // answers, but they render inside the conversation layout — every screen
@@ -4396,8 +4401,10 @@ export function Chat({
                   // Upload = real tokens of the last request; download =
                   // the animated chars/4 estimate, matching the classic
                   // spinner's counter (the suffix used raw chars before,
-                  // inflating the reading next to a real upload number).
-                  suffix={`${lastUploadTokens > 0 ? ` · ↑ ${formatTokens(lastUploadTokens)}` : ''} · ↓ ${formatTokens(Math.round(channel.responseChars / 4))} tokens`}
+                  // inflating the reading next to a real upload number). An
+                  // automatic compaction mid-turn badges THIS line too — it is
+                  // the spinner slot whenever real activity data exists.
+                  suffix={`${lastUploadTokens > 0 ? ` · ↑ ${formatTokens(lastUploadTokens)}` : ''} · ↓ ${formatTokens(Math.round(channel.responseChars / 4))} tokens${compactionBadge === undefined ? '' : ` · ${compactionBadge}`}`}
                 />
               </Box>
             ) : (
@@ -4410,10 +4417,7 @@ export function Chat({
                 totalPausedMsRef={totalPausedMsRef}
                 pauseStartTimeRef={pauseStartTimeRef}
                 thinkingStatus={thinkingStatus}
-                // An automatic pressure compaction runs INSIDE the turn, so it
-                // rides the working spinner as a badge instead of a second row
-                // (the spinner's timer is the turn's, not the compaction's).
-                suffix={channel.compaction === undefined ? undefined : t('compact-badge')}
+                suffix={compactionBadge}
               />
             ))}
         {!channel.working && channel.compaction !== undefined && (

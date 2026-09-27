@@ -20,7 +20,7 @@
  *
  * 运行：node --import tsx/esm scripts/verify-compaction-progress.tsx
  */
-const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough }, React, { Terminal: XTerm }, ui, { CompactionStatusRow }, { t }, { Chat }, { QuestionStore }, { default: instances }, { FRAME_PRESETS }] =
+const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough }, React, { Terminal: XTerm }, ui, { CompactionStatusRow }, { t }, { Chat }, { QuestionStore }, { default: instances }, { FRAME_PRESETS }, { ActivityStore }] =
   await Promise.all([
     import('../src/dsh-adapter/channel.js'),
     import('./lib/term-test.mjs'),
@@ -34,6 +34,7 @@ const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough },
     import('../src/dsh-adapter/questions.js'),
     import('../src/ink/instances.js'),
     import('../src/components/activityFrames.js'),
+    import('../src/dsh-adapter/activity-store.js'),
   ])
 
 let failed = 0
@@ -105,7 +106,7 @@ function makeCompaction(kind) {
   }
 }
 
-function assemble(kind = 'hang-until-abort') {
+function assemble(kind = 'hang-until-abort', extra = []) {
   seq = 0
   const compaction = makeCompaction(kind)
   const services = { compaction, llm: { listProviders: () => [], listModels: async () => [] } }
@@ -118,7 +119,11 @@ function assemble(kind = 'hang-until-abort') {
     get: name => services[name],
     logger: { warn() {} },
   }
-  const agent = makeAgent('a1', makeEvents())
+  const events = makeEvents()
+  // Extra durable events land in the log BEFORE the channel binds, so they are
+  // folded by the replay path rather than by the live `session/event` path.
+  for (const event of extra) events.push(ev(event.type, event.data))
+  const agent = makeAgent('a1', events)
   const channel = createChannel(ctx, agent, { model: 'model-a', cwd: '/tmp/demo', provider: 'fake-provider', activity: false })
   return { compaction, channel, agent, handlers }
 }
@@ -232,6 +237,30 @@ function assemble(kind = 'hang-until-abort') {
   second.channel.cancelCompact()
   await settle(() => second.channel.compaction === undefined)
   second.channel.releaseContributions()
+
+  // Replay is settled history: a process killed between start and end leaves an
+  // unmatched start in the log, and a row painted for it would never clear —
+  // the resume would look like a compaction that runs forever.
+  const killed = assemble('resolve', [{ type: 'compaction/start', data: {} }])
+  check(
+    'scene5: an unmatched compaction/start in the log opens no row on replay',
+    killed.channel.compaction === undefined,
+    JSON.stringify(killed.channel.compaction),
+  )
+  killed.channel.releaseContributions()
+
+  // The matched pair must not paint one either (it opens and clears inside the
+  // same replay fold — nothing about it is live).
+  const settledPair = assemble('resolve', [
+    { type: 'compaction/start', data: {} },
+    { type: 'compaction/end', data: {} },
+  ])
+  check(
+    'scene5: a completed compaction pair in the log opens no row on replay',
+    settledPair.channel.compaction === undefined,
+    JSON.stringify(settledPair.channel.compaction),
+  )
+  settledPair.channel.releaseContributions()
 }
 
 // ==== 场景 6：状态行渲染（标签 / 阶段 / 计时 / Esc 提示 / 窄屏降级）==========
@@ -384,7 +413,7 @@ function makeChatChannel(overrides = {}) {
   return { channel, calls }
 }
 
-async function mountChat(channel, cols = 100, rows = 30) {
+async function mountChat(channel, cols = 100, rows = 30, activityStore) {
   const term = new XTerm({ cols, rows, scrollback: 200, allowProposedApi: true })
   class FakeStdout extends Writable {
     constructor() { super(); this.columns = cols; this.rows = rows; this.isTTY = true }
@@ -406,6 +435,7 @@ async function mountChat(channel, cols = 100, rows = 30) {
       onExit: () => {},
       fullscreen: false,
       trajectorySeen: true,
+      activityStore,
     }),
     { stdout, stdin, stderr: stdout, exitOnCtrlC: false, patchConsole: false },
   )
@@ -473,6 +503,37 @@ async function mountChat(channel, cols = 100, rows = 30) {
   check('scene7: no separate row while a turn runs', !turnChat.screen().includes(t('compact-esc-cancel')), turnChat.screen().trim())
   await turnChat.instance.unmount()
   check('scene7: Esc during a turn interrupts the turn, not the compaction', duringTurn.calls.cancelCompact === 0, String(duringTurn.calls.cancelCompact))
+
+  // ...and the badge has to ride the working-ACTIVITY line too: with real
+  // activity data that line IS the spinner slot, so a badge passed only to the
+  // classic spinner would leave an automatic compaction invisible.
+  const activityStore = new ActivityStore()
+  activityStore.update('probe', {
+    phase: 'thinking',
+    line: '正在思考…',
+    live: true,
+    toolCount: 0,
+    phaseStartedAt: Date.now() - 5_000,
+    turnStartedAt: Date.now() - 5_000,
+    updatedAt: Date.now(),
+    lang: 'zh',
+  })
+  const lineTurn = makeChatChannel({
+    working: true,
+    activityEnabled: true,
+    activityFrames: 'aesthetic',
+    compaction: { startedAt: Date.now() - 3_000, phase: 'summary', outputChars: 800, cancellable: true },
+  })
+  const lineChat = await mountChat(lineTurn.channel, 100, 30, activityStore)
+  const activityLineRow = () => lineChat.screen().split('\n').find(line => line.includes('正在思考…')) ?? ''
+  const lineBadged = await settled(() => activityLineRow().includes(t('compact-badge')), { timeoutMs: 4000 })
+  check('scene7: an automatic compaction badges the working-activity line', lineBadged, activityLineRow())
+  check(
+    'scene7: the badge rides that line as a suffix, not as a second row',
+    activityLineRow().includes(t('compact-badge')) && !lineChat.screen().includes(t('compact-esc-cancel')),
+    activityLineRow(),
+  )
+  await lineChat.instance.unmount()
 }
 
 console.log(failed === 0 ? '\nOK: compaction progress row' : `\n${failed} FAILED`)
