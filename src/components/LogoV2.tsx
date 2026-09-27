@@ -376,7 +376,7 @@ export function LogoV2({
             }}
           >
             {whaleGirl ? (
-              // 固定 18 行高、底色铺满槽位：真图与字符画女仆娘共用同一个
+              // 固定 16 行高、底色铺满槽位：真图与字符画女仆娘共用同一个
               // 盒，真图解码完成换画时头部高度不跳。显式底色**必须是终端
               // 真底色**（OSC 11 的回答；见 useTerminalBackground）——Sixel
               // 没有 alpha，透明像素得合成到某个不透明衬底上，用错颜色就会
@@ -384,14 +384,14 @@ export function LogoV2({
               // 终端底色）。最优先永远是真图，字符画只是协议不可用时的保底。
               <Box
                 width={WHALE_BOX_WIDTH}
-                height={18}
+                height={16}
                 flexDirection="row"
                 justifyContent="center"
                 alignItems="center"
                 backgroundColor={terminalBackground}
               >
                 {maidImageActive ? (
-                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={18} presentation="transcript" />
+                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={16} presentation="transcript" />
                 ) : (
                   <WhaleGirlArt width={WHALE_BOX_WIDTH} />
                 )}

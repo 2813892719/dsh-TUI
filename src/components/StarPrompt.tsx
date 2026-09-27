@@ -11,9 +11,9 @@ import type { StarMilestone } from '../usageStats.js'
  * text. The slot stays 40 wide so the raster portrait and the animated pixel
  * whale fallback (40×13) share one card width. */
 const MIN_ART_COLUMNS = 90
-/** Card height with the art (18 art rows + 2 border rows); terminals shorter
+/** Card height with the art (16 art rows + 2 border rows); terminals shorter
  * than this + 2 margin rows get the text-only card. */
-const MIN_ART_ROWS = 22
+const MIN_ART_ROWS = 20
 /** Text column width inside the card: the longest zh body line is 48 columns
  * and wraps here; enough for every button and hint line to stay one row. */
 const TEXT_COLUMNS = 40
@@ -103,7 +103,7 @@ export function StarPrompt({
 
   const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS + 8, columns - 6))
   const cardColumns = withArt ? 88 : Math.min(columns, textColumns + 6)
-  const cardRows = withArt ? 20 : 12
+  const cardRows = withArt ? 18 : 12
   const left = Math.max(0, Math.floor((columns - cardColumns) / 2))
   const bottom = Math.max(0, Math.min(Math.floor((rows - cardRows) / 2), rows - cardRows))
 
@@ -150,12 +150,12 @@ export function StarPrompt({
         onClick={event => { event.stopImmediatePropagation() }}
       >
         {withArt && (
-          // 40×18 槽位：最优先真图立绘（按裁掉透明边后的实际比例适配）；
+          // 40×16 槽位：最优先真图立绘（按裁掉透明边后的实际比例适配）；
           // 终端图像协议不可用时回落**会动的像素鲸鱼**（经典开场循环，
           // 40×13 居中）。
-          <Box width={40} height={18} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
+          <Box width={40} height={16} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
             {imagesAvailable && maidSource !== undefined ? (
-              <MaidPortrait source={maidSource} maxColumns={40} maxRows={18} presentation="preview" />
+              <MaidPortrait source={maidSource} maxColumns={40} maxRows={16} presentation="preview" />
             ) : (
               <WhaleArt frameIndex={whaleFrame} width={40} />
             )}

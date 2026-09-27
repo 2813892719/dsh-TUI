@@ -62,6 +62,7 @@ import type { InjectController } from '../dsh-adapter/inject-channel.js'
 import { PromptEditorLayer, usePromptEditorOpen } from '../components/PromptEditor.js'
 import { GoalTodoPanel } from '../components/GoalTodoPanel.js'
 import { AutoRecapRow } from '../components/AutoRecapRow.js'
+import { CompactionStatusRow } from '../components/CompactionStatusRow.js'
 import { BalanceReportRow } from '../components/BalanceReportRow.js'
 import type { BalanceResult } from '../deepseekBalance.js'
 import { LoadedContextPanel } from '../components/LoadedContextPanel.js'
@@ -628,6 +629,9 @@ export function Chat({
   // 所以这一档完好留给下一次启动）；整屏界面随后关闭也不追到聊天视图
   // 上补弹——开屏求星不追人。
   const starModalArmedRef = React.useRef(false)
+  /** 预览缝（`DSH_TUI_STAR_MODAL=1`）：启动即弹一次 99h 档的弹窗，**既不
+   * 读账本也不记账**——给作者看效果、给回归夹具用；生产不设这个变量。 */
+  const starModalPreview = process.env.DSH_TUI_STAR_MODAL === '1'
   React.useEffect(() => {
     if (starModalArmedRef.current) return
     if (starPrompt === null) return
@@ -637,6 +641,11 @@ export function Chat({
     const timer = setTimeout(() => {
       // 到点时回合已经开始的仍不弹（channel 是活对象，读到的是当前值）。
       if (channel.working) return
+      if (starModalPreview) {
+        const preview = STAR_MILESTONES.findIndex(milestone => milestone.hours === 99)
+        if (preview >= 0) setStarModal(preview)
+        return
+      }
       const index = dueStarModal(starPrompt?.dir)
       if (index === null) return
       markStarAsked(index, starPrompt?.dir)
@@ -3877,6 +3886,18 @@ export function Chat({
         channel.cancel()
       }
       event.stopImmediatePropagation()
+    } else if (
+      key.escape
+      && !helpOpen
+      && !channel.working
+      && channel.compaction?.cancellable === true
+      && !promptControllerRef.current?.vimActive()
+    ) {
+      // Idle Esc otherwise falls through to the prompt's double-tap-clear;
+      // while a manual compaction runs, stopping it is what the status row
+      // promises (and the host closes the bracket cleanly on abort).
+      channel.cancelCompact()
+      event.stopImmediatePropagation()
     } else if (actionMatches('transcript', input, key) && !helpOpen) {
       // Leaving transcript mode (default Ctrl+O) — search was already
       // handled above. Help is modal: toggling this state behind the
@@ -3911,7 +3932,15 @@ export function Chat({
       // CLEARS a non-empty prompt (single press) and only arms the
       // double-press exit when the input is empty; ctrl+d keeps the
       // time-based double-press exit regardless.
-      if (channel.working) {
+      if (input === 'c' && !channel.working && channel.compaction?.cancellable === true) {
+        // Ctrl+C during a manual compaction stops the compaction instead of
+        // arming the double-press exit: exiting the process mid-bracket is how
+        // a session log ends up with an unmatched `compaction/start`. Ctrl+D
+        // keeps its exit meaning, and the next Ctrl+C behaves normally again.
+        channel.cancelCompact()
+        exitPendingRef.current = false
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
+      } else if (channel.working) {
         // First press while working only interrupts. If that abort is still
         // converging (cancelPending) the next press is the user insisting on
         // leaving: go straight to the exit funnel. Without this, a stuck turn
@@ -3985,6 +4014,11 @@ export function Chat({
   // Working-activity line (spinner slot): context-pressure prefix shares the
   // StatusLine thresholds (amber ≥ 80, red ≥ 95).
   const activityWarnPct = contextPressurePct(channel.lastUsage, channel.contextWindow)
+
+  // Who owns the spinner slot: with the working-activity line on, that slot
+  // draws the user's `/activity` preset, so the compaction row borrows the same
+  // indicator instead of answering with the classic dot.
+  const activitySlot = channel.activityEnabled && !channel.minimal
 
   // ── Interrupt lane ─────────────────────────────────────────────────────
   // The approval and ask_user_question panels park the agent until the user
@@ -4439,8 +4473,7 @@ export function Chat({
           />
         )}
         {channel.working &&
-          (channel.activityEnabled &&
-          !channel.minimal &&
+          (activitySlot &&
           workingActivity !== undefined &&
           workingActivity.line !== '' &&
           workingActivity.phase !== 'idle' ? (
@@ -4475,8 +4508,20 @@ export function Chat({
                 totalPausedMsRef={totalPausedMsRef}
                 pauseStartTimeRef={pauseStartTimeRef}
                 thinkingStatus={thinkingStatus}
+                // An automatic pressure compaction runs INSIDE the turn, so it
+                // rides the working spinner as a badge instead of a second row
+                // (the spinner's timer is the turn's, not the compaction's).
+                suffix={channel.compaction === undefined ? undefined : t('compact-badge')}
               />
             ))}
+        {!channel.working && channel.compaction !== undefined && (
+          // Manual `/compact` runs while the session is idle: the row takes the
+          // spinner slot so the screen never looks frozen for its ~25-70s.
+          <CompactionStatusRow
+            compaction={channel.compaction}
+            activityPreset={activitySlot ? channel.activityFrames : undefined}
+          />
+        )}
         <GoalTodoPanel
           channel={channel}
           collapsed={todoCollapsed}
