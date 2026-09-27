@@ -292,7 +292,8 @@ export function StarPrompt({
                     <Box height={1} />
                     <Text color="error" wrap="wrap">{failure}</Text>
                   </>
-                )}                {phase !== 'failed' && (
+                )}
+                {phase !== 'failed' && (
                   <>
                     <Box height={1} />
                     <Divider width={textColumns} />
