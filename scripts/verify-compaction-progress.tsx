@@ -11,14 +11,16 @@
  *     提示是「已取消」而不是「失败」；无在飞事务时是 no-op。
  *  4. 自动压力压缩由 session 事件驱动：`compaction/start` 建一行不可取消的
  *     行，`compaction/end` 清掉；宿主自己的 start 事件不得把手动行降级。
- *  5. 组件渲染：标签 + 阶段 + 计时 + Esc 提示；窄终端先丢阶段、再丢提示。
+ *  5. 组件渲染：标签 + 阶段 + 计时 + Esc 提示；窄终端先丢阶段、再丢提示；
+ *     前导指示器随 spinner 槽位——开了活动行就用用户的 `/activity` 预设
+ *     （宽帧要计入行宽预算），否则才是经典圆点。
  *  6. 挂真实 Chat：状态行出现在 prompt 上方，Esc 真的打到 cancelCompact；
  *     不可取消的那一行（自动压缩）Esc 不触发取消；回合进行中改为 spinner
  *     后缀徽标而不是第二行。
  *
  * 运行：node --import tsx/esm scripts/verify-compaction-progress.tsx
  */
-const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough }, React, { Terminal: XTerm }, ui, { CompactionStatusRow }, { t }, { Chat }, { QuestionStore }, { default: instances }] =
+const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough }, React, { Terminal: XTerm }, ui, { CompactionStatusRow }, { t }, { Chat }, { QuestionStore }, { default: instances }, { FRAME_PRESETS }] =
   await Promise.all([
     import('../src/dsh-adapter/channel.js'),
     import('./lib/term-test.mjs'),
@@ -31,6 +33,7 @@ const [{ createChannel }, { settled, viewportLines }, { Writable, PassThrough },
     import('../src/screens/Chat.js'),
     import('../src/dsh-adapter/questions.js'),
     import('../src/ink/instances.js'),
+    import('../src/components/activityFrames.js'),
   ])
 
 let failed = 0
@@ -41,6 +44,8 @@ function check(name, ok, extra = '') {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const settle = (cond, ms = 3000) => settled(cond, { timeoutMs: ms })
 const toasts = channel => channel.notifications.map(item => item.text).join('\n')
+/** `/activity aesthetic` — the progress-bar preset the row has to borrow. */
+const BAR_FRAMES = FRAME_PRESETS.aesthetic.frames
 
 // ---- 事件与 agent 桩 --------------------------------------------------------
 let seq = 0
@@ -230,7 +235,7 @@ function assemble(kind = 'hang-until-abort') {
 }
 
 // ==== 场景 6：状态行渲染（标签 / 阶段 / 计时 / Esc 提示 / 窄屏降级）==========
-async function renderRow(compaction, cols) {
+async function mountRow(compaction, cols, activityPreset) {
   const rows = 6
   const term = new XTerm({ cols, rows, scrollback: 0, allowProposedApi: true })
   class FakeStdout extends Writable {
@@ -239,12 +244,21 @@ async function renderRow(compaction, cols) {
   }
   const { render, ThemeProvider } = ui
   const app = await render(
-    React.createElement(ThemeProvider, { theme: 'dark' }, React.createElement(CompactionStatusRow, { compaction })),
+    React.createElement(
+      ThemeProvider,
+      { theme: 'dark' },
+      React.createElement(CompactionStatusRow, { compaction, activityPreset }),
+    ),
     { stdout: new FakeStdout(), exitOnCtrlC: false, patchConsole: false },
   )
   await settled(() => term.buffer.active.getLine(1)?.translateToString(true).includes(t('compact-working')), { timeoutMs: 3000 })
+  return { term, app, row: () => term.buffer.active.getLine(1)?.translateToString(true) ?? '' }
+}
+
+async function renderRow(compaction, cols, activityPreset) {
+  const { term, app } = await mountRow(compaction, cols, activityPreset)
   const lines = []
-  for (let y = 0; y < rows; y++) lines.push(term.buffer.active.getLine(y)?.translateToString(true) ?? '')
+  for (let y = 0; y < 6; y++) lines.push(term.buffer.active.getLine(y)?.translateToString(true) ?? '')
   await app.unmount()
   return lines
 }
@@ -270,6 +284,40 @@ async function renderRow(compaction, cols) {
   const narrowRow = narrow.find(line => line.includes(t('compact-working'))) ?? ''
   check('scene6: a narrow terminal drops the phase before the Esc hint', !narrowRow.includes(t('compact-phase-prefill')) && narrowRow.includes(t('compact-esc-cancel')), narrowRow)
   check('scene6: the narrow row stays on one line', narrow.filter(line => line.trim() !== '').length === 1, JSON.stringify(narrow))
+
+  // The spinner slot's indicator: with the working-activity line on, the row
+  // must draw the user's `/activity` preset instead of the classic dot.
+  const plainRow = { startedAt: Date.now() - 26_000, phase: 'prefill', outputChars: 0, cancellable: true }
+  const preset = await renderRow(plainRow, 100, 'aesthetic')
+  const presetRow = preset.find(line => line.includes(t('compact-working'))) ?? ''
+  check('scene6: a /activity preset draws the indicator', BAR_FRAMES.some(frame => presetRow.includes(frame)), presetRow)
+  // The leading slot, not "somewhere on the line": the dot family's `·` frame
+  // is the same character as the field separator, so only the first cell tells
+  // the two families apart.
+  check('scene6: the preset owns the leading slot', BAR_FRAMES.some(frame => presetRow.startsWith(frame)), presetRow)
+  check('scene6: a classic row still leads with the dot glyph', ['·', '•', '●'].includes(prefillRow[0]), prefillRow)
+
+  // The 7-cell bar is charged to the row's budget: the dot needs 34 columns to
+  // keep the Esc hint, the bar needs 40 — at 36 they must disagree.
+  const tightDot = await renderRow(plainRow, 36)
+  const tightDotRow = tightDot.find(line => line.includes(t('compact-working'))) ?? ''
+  const tightBar = await renderRow(plainRow, 36, 'aesthetic')
+  const tightBarRow = tightBar.find(line => line.includes(t('compact-working'))) ?? ''
+  check('scene6: at 36 columns the dot keeps the Esc hint', tightDotRow.includes(t('compact-esc-cancel')), tightDotRow)
+  check('scene6: the preset indicator is charged to the row budget', !tightBarRow.includes(t('compact-esc-cancel')), tightBarRow)
+  check('scene6: the preset row stays on one line', tightBar.filter(line => line.trim() !== '').length === 1, JSON.stringify(tightBar))
+
+  // Cadence comes from the preset (aesthetic: 140ms/frame), not from a frozen
+  // first frame.
+  const live = await mountRow(plainRow, 100, 'aesthetic')
+  const seen = new Set()
+  for (let i = 0; i < 14; i++) {
+    const frame = BAR_FRAMES.find(candidate => live.row().includes(candidate))
+    if (frame !== undefined) seen.add(frame)
+    await sleep(40) // 固定窗:pacing 等下一次重绘以采样动画帧
+  }
+  await live.app.unmount()
+  check('scene6: the indicator advances through the preset frames', seen.size >= 2, [...seen].join(','))
 }
 
 // ==== 场景 7：挂真实 Chat —— 行在屏上，Esc 真的打到 cancelCompact ============
@@ -381,6 +429,25 @@ async function mountChat(channel, cols = 100, rows = 30) {
   const cancelled = await settled(() => calls.cancelCompact === 1, { timeoutMs: 2000 })
   check('scene7: Esc reaches cancelCompact exactly once', cancelled, String(calls.cancelCompact))
   await chat.instance.unmount()
+
+  // The row borrows the spinner slot's indicator: the working-activity line
+  // owns that slot with `activityEnabled`, so the row must draw the preset the
+  // turn would draw — the wiring lives in Chat, not in the component.
+  const preset = makeChatChannel({
+    activityEnabled: true,
+    activityFrames: 'aesthetic',
+    compaction: { startedAt: Date.now() - 26_000, phase: 'prefill', outputChars: 0, cancellable: true },
+  })
+  const presetChat = await mountChat(preset.channel)
+  const presetLine = () => presetChat.screen().split('\n').find(line => line.includes(t('compact-working'))) ?? ''
+  const presetShown = await settled(
+    () => BAR_FRAMES.some(frame => presetLine().includes(frame)),
+    { timeoutMs: 4000 },
+  )
+  check('scene7: Chat draws the /activity preset in the compaction row', presetShown, presetLine())
+  check('scene7: the preset owns the leading slot', BAR_FRAMES.some(frame => presetLine().startsWith(frame)), presetLine())
+  check('scene7: the preset row keeps the Esc hint', presetChat.screen().includes(t('compact-esc-cancel')), presetChat.screen().trim())
+  await presetChat.instance.unmount()
 
   const automatic = makeChatChannel({
     compaction: { startedAt: Date.now() - 3_000, phase: 'summary', outputChars: 800, cancellable: false },

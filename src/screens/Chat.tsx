@@ -3919,6 +3919,11 @@ export function Chat({
   // StatusLine thresholds (amber ≥ 80, red ≥ 95).
   const activityWarnPct = contextPressurePct(channel.lastUsage, channel.contextWindow)
 
+  // Who owns the spinner slot: with the working-activity line on, that slot
+  // draws the user's `/activity` preset, so the compaction row borrows the same
+  // indicator instead of answering with the classic dot.
+  const activitySlot = channel.activityEnabled && !channel.minimal
+
   // ── Interrupt lane ─────────────────────────────────────────────────────
   // The approval and ask_user_question panels park the agent until the user
   // answers, but they render inside the conversation layout — every screen
@@ -4370,8 +4375,7 @@ export function Chat({
           />
         )}
         {channel.working &&
-          (channel.activityEnabled &&
-          !channel.minimal &&
+          (activitySlot &&
           workingActivity !== undefined &&
           workingActivity.line !== '' &&
           workingActivity.phase !== 'idle' ? (
@@ -4415,7 +4419,10 @@ export function Chat({
         {!channel.working && channel.compaction !== undefined && (
           // Manual `/compact` runs while the session is idle: the row takes the
           // spinner slot so the screen never looks frozen for its ~25-70s.
-          <CompactionStatusRow compaction={channel.compaction} />
+          <CompactionStatusRow
+            compaction={channel.compaction}
+            activityPreset={activitySlot ? channel.activityFrames : undefined}
+          />
         )}
         <GoalTodoPanel
           channel={channel}
