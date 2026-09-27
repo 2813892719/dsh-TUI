@@ -71,11 +71,15 @@ export function StarPrompt({
   milestone,
   actions,
   onClose,
+  initialPhase = 'ask',
 }: {
   /** The reached milestone (drives the title's hours/launches wording). */
   readonly milestone: StarMilestone
   readonly actions: StarPromptActions
   readonly onClose: () => void
+  /** 起始阶段：`done` 直接进庆祝态——`/star`、`Alt+S`、标语点击成功后就
+   *  走这条（只演感谢，不再问一次）。 */
+  readonly initialPhase?: 'ask' | 'done'
 }): React.ReactNode {
   React.useSyncExternalStore(subscribeLang, getLang)
   const { columns, rows } = useTerminalSize()
@@ -88,7 +92,7 @@ export function StarPrompt({
   // 衬底（Sixel 没有 alpha，透明像素得合成到某个实色上）。
   const terminalBackground = useTerminalBackground()
   const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
-  const [phase, setPhase] = React.useState<'ask' | 'working' | 'done' | 'failed'>('ask')
+  const [phase, setPhase] = React.useState<'ask' | 'working' | 'done' | 'failed'>(initialPhase)
   const [failure, setFailure] = React.useState('')
   const [selected, setSelected] = React.useState(0)
   // Some terminals report one Enter twice (parsed Return then raw CR); the

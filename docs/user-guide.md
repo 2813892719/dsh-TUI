@@ -121,7 +121,7 @@ dsh-tui
 | `Shift+Tab` | 循环会话模式（默认 → plan 计划 → full 完全访问）；挂载了第三方权限预设时，它们按 registry 顺序排在循环末尾 |
 | `Shift+↑` | 消息选择模式（`↑/↓` 移动，`Enter` 展开单条，`Esc` 退出） |
 | `Ctrl+T`（⌘T） | 打开轨迹场景（同 `/trace`） |
-| `Alt+S` | 一键 star（同 `/star`；开屏那句求 star 标语整行也可点）。键位可在 `/settings` 改 |
+| `Alt+S` | 一键 star（同 `/star`；开屏那句求 star 标语整行也可点）。键位可在 `/settings` 改；成功后会演一小段「鲸鱼娘接住星星」的庆祝。想随时看这段庆祝：`DSH_TUI_STAR_MODAL=1 dsh-tui`（预览用环境变量，不影响账本） |
 
 ### 2.6 鼠标（fullscreen 全屏模式；拖拽/双击/三击即选即复制）
 

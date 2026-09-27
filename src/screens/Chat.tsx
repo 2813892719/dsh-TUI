@@ -623,7 +623,7 @@ export function Chat({
    * 只在启动时判定一次——回合进行中、或已有整屏界面在开（如开机首页），
    * 这一轮不弹也**不记账**，留给下一次启动。`starPrompt` 是测试缝：传
    * `null` 显式关闭，传 actions 覆写两个按钮（不跑真 gh、不开真浏览器）。 */
-  const [starModal, setStarModal] = React.useState<number | null>(null)
+  const [starModal, setStarModal] = React.useState<{ index: number; phase: 'ask' | 'done' } | null>(null)
   // 单发闩：只在第一个"安静的开屏视口"上武装定时器。700ms 窗口内整屏
   // 界面打开 → cleanup 掐掉定时器且**不再重臂**（记账只发生在回调里，
   // 所以这一档完好留给下一次启动）；整屏界面随后关闭也不追到聊天视图
@@ -643,13 +643,13 @@ export function Chat({
       if (channel.working) return
       if (starModalPreview) {
         const preview = STAR_MILESTONES.findIndex(milestone => milestone.hours === 99)
-        if (preview >= 0) setStarModal(preview)
+        if (preview >= 0) setStarModal({ index: preview, phase: 'ask' })
         return
       }
       const index = dueStarModal(starPrompt?.dir)
       if (index === null) return
       markStarAsked(index, starPrompt?.dir)
-      setStarModal(index)
+      setStarModal({ index, phase: 'ask' })
     }, 700)
     return () => { clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在整屏界面开合时重判；闩保证只武装一次
@@ -670,6 +670,15 @@ export function Chat({
         return { kind: 'failed' as const, detail: outcome.detail, url }
       })).then(attempt => {
       if (attempt.kind === 'starred') {
+        // 成功就演一段庆祝（女仆娘接住星星）——`/star`、`Alt+S`、标语点击
+        // 都是这一条路。整屏界面开着或回合进行中时弹窗放不下，退回一句
+        // 通知，用户至少知道 star 点上了。
+        const blocked = channel.working || supervisorOpen || treeOpen || settingsOpen
+        const index = STAR_MILESTONES.findIndex(milestone => milestone.hours === 99)
+        if (!blocked && index >= 0) {
+          setStarModal({ index, phase: 'done' })
+          return
+        }
         channel.notify(t('star-ok'), { color: 'success' })
         return
       }
@@ -5091,11 +5100,12 @@ export function Chat({
           草稿编辑器在内的全部后绘兄弟；关闭即整树卸载——键盘自然交还，
           没有残留的监听会再抢键。onClose 用 useCallback 钉死引用：弹窗
           开着的每一帧 Chat 重渲染都不弄脏它的绝对定位捕获层。 */}
-      {starModal !== null && STAR_MILESTONES[starModal] !== undefined && (
+      {starModal !== null && STAR_MILESTONES[starModal.index] !== undefined && (
         <StarPrompt
-          milestone={STAR_MILESTONES[starModal]}
+          milestone={STAR_MILESTONES[starModal.index]}
           actions={starModalActions}
           onClose={closeStarModal}
+          initialPhase={starModal.phase}
         />
       )}
     </Box>

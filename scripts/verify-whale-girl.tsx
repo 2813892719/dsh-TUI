@@ -39,6 +39,7 @@ const [
   { createChannel },
   { QuestionStore },
   { POINTER },
+  { LOCAL_COMMANDS },
   { settle, settled, sleep },
 ] = await Promise.all([
   import('node:stream'),
@@ -49,6 +50,7 @@ const [
   import('../src/dsh-adapter/channel.js'),
   import('../src/dsh-adapter/questions.js'),
   import('../src/terminal-utils/figures.js'),
+  import('../src/commands.js'),
   import('./lib/term-test.mjs'),
 ])
 
@@ -229,6 +231,7 @@ function makeChatChannel(working = false) {
     lastUserText: '',
     pending: [],
     notifications: [],
+    commandList: LOCAL_COMMANDS,
     contextSegments: { system: 0, prompt: 0, assistant: 0, thinking: 0, tools: 0 },
     subscribe: () => () => {},
     submit() {},
@@ -419,6 +422,20 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   chat.stdin.write('\u001bs')
   check('H3 Alt+S fires the one-key star action', await settled(() => calls.length === 1 && calls[0] === 'star', { timeoutMs: 4000 }),
     `calls=${calls.join(',')}`)
+  await chat.unmount()
+}
+
+// I：一次性动作成功后也演庆祝（`/star`、`Alt+S`、标语点击共用 runStarAction
+// ——这里用已验证端到端的 Alt+S 触发，断言的是新增的"成功→庆祝"分支）。
+{
+  const dir = join(fixtureHome, 'case-i')
+  seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 1 })
+  const calls: string[] = []
+  const chat = await mountChat({ dir, onStar: () => { calls.push('star'); return { kind: 'starred' } } })
+  await sleep(400) // 固定窗:pacing 等挂载与键盘订阅就绪
+  chat.stdin.write('\u001bs')
+  check('I1 a successful one-key star (/star shares this path) opens the celebration',
+    await settled(() => calls.length === 1 && chat.plain().includes('收到 Star'), { timeoutMs: 5000 }))
   await chat.unmount()
 }
 

@@ -60,7 +60,7 @@ const VERSION = (() => {
 const WHALE_CENTER = 18.5
 
 /** 「高兴鲸娘」停留时长（点她之后自动回安静版）。 */
-const MAID_HAPPY_MS = 4000
+const MAID_HAPPY_MS = 3000
 
 /** `max` → `Max` (effort levels arrive lower-case from the adapter). */
 function capitalize(text: string): string {
