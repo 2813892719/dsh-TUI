@@ -5,6 +5,7 @@ import { Divider } from './design-system/Divider.js'
 import { HintLine } from './design-system/HintLine.js'
 import { ListItem } from './design-system/ListItem.js'
 import { MaidPortrait, useMaidPortrait } from './maidPortrait.js'
+import { useTerminalBackground } from './design-system/ThemeProvider.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
 import { OPENING_SEQUENCES, WHALE_FRAME_INDEX } from './whaleFrames.js'
 import type { StarMilestone } from '../usageStats.js'
@@ -12,19 +13,19 @@ import type { StarMilestone } from '../usageStats.js'
 /** Art slot width — the pixel whale fallback is 40 columns wide, and the
  * raster portrait fits inside the same slot so the card width never moves. */
 const ART_COLUMNS = 40
-/** Art slot height: 16 rows (confetti 3 + whale 13 in the celebration). */
-const ART_ROWS = 16
-/** Text column width: the longest zh body line is 48 columns; at 48 every
- * copy line, button and hint stays on ONE row — no stranded `⭐` or
- * mid-sentence breaks (the "排版不舒适" report). */
+/** Art slot height: 18 rows (confetti 3 + whale 13 in the celebration), and
+ * the text column is pinned to the same height (see the column's comment). */
+const ART_ROWS = 18
+/** Text column width: every copy line, button and hint stays on ONE row
+ * (the "排版不舒适" report: no stranded `⭐`, no mid-sentence breaks). */
 const TEXT_COLUMNS = 48
 /** Portrait + text side by side need this many columns (art 40 + gap 2 +
  * text 48 + card chrome 6); below that the card drops the art and stacks
  * text at the narrower width. */
 const MIN_ART_COLUMNS = 98
-/** Card height with the art (16 art rows + border + title row); terminals
- * shorter than this + 2 margin rows get the text-only card. */
-const MIN_ART_ROWS = 20
+/** Card height with the art (18 art rows + 2 border rows); terminals shorter
+ * than this + 2 margin rows get the text-only card. */
+const MIN_ART_ROWS = 23
 /** Dwell on the standard pose before the fallback whale's intro loops. */
 const WHALE_REST_MS = 3000
 /** How long the celebration stays before the card closes itself. */
@@ -79,6 +80,11 @@ export function StarPrompt({
   const { columns, rows } = useTerminalSize()
   const imagesAvailable = useTerminalImages()
   const maidSource = useMaidPortrait(imagesAvailable)
+  // 卡片底色用**终端真底色**（OSC 11）而不是主题的卡片色：后者是一整块
+  // 与终端背景无关的实色板，压在带背景图的终端上很僵硬；用真底色时卡片
+  // 与终端同色、只靠边框和暗化的背景区分层次，同时它也是真图立绘的不透明
+  // 衬底（Sixel 没有 alpha，透明像素得合成到某个实色上）。
+  const terminalBackground = useTerminalBackground()
   const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
   const [phase, setPhase] = React.useState<'ask' | 'working' | 'done' | 'failed'>('ask')
   const [failure, setFailure] = React.useState('')
@@ -144,7 +150,10 @@ export function StarPrompt({
 
   const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS, columns - 6))
   const cardColumns = withArt ? 96 : Math.min(columns, textColumns + 6)
-  const cardRows = withArt ? 18 : 16
+  // 卡片 = 艺术槽 + 上下边框。absolute 卡片的高度上限由**根节点高度**决定：
+  // 根只有内容高（内联模式的夹具）时，卡片顶端会被裁掉——夹具因此把 Chat
+  // 包在视口大小的 Box 里（真机 alt-screen 的根就是整屏）。
+  const cardRows = withArt ? ART_ROWS + 2 : 18
   const left = Math.max(0, Math.floor((columns - cardColumns) / 2))
   const bottom = Math.max(0, Math.min(Math.floor((rows - cardRows) / 2), rows - cardRows))
   const celebrating = phase === 'done'
@@ -183,7 +192,7 @@ export function StarPrompt({
         flexDirection="column"
         flexShrink={0}
         overflow="hidden"
-        backgroundColor="toolCardBackground"
+        backgroundColor={terminalBackground}
         opaque
         onClick={event => { event.stopImmediatePropagation() }}
       >
@@ -207,8 +216,16 @@ export function StarPrompt({
               maidSource={maidSource}
             />
           )}
-          <Box flexDirection="column" width={textColumns}>
-            <Text color="accent" bold wrap="wrap">{title}</Text>
+          {/* 列高钉死成艺术槽的高度（16 行）：让列比槽矮 1 行时，行内
+              `alignItems: center` 会给出半行偏移，渲染器按整行绘制时
+              会把**第一行（标题）**挤掉——实机与夹具都复现过。列与槽
+              等高即无偏移，标题稳定落在第一行。 */}
+          {/* 文字列与艺术槽等高：两侧顶端对齐，行数少了也不会因为行内居中
+              产生半行偏移。 */}
+          <Box flexDirection="column" width={textColumns} {...(withArt ? { height: ART_ROWS } : {})}>
+            <Box height={1} flexShrink={0}>
+              <Text color="accent" bold wrap="truncate-end">{title}</Text>
+            </Box>
             <Box height={1} />
             {celebrating ? (
               <>
@@ -227,6 +244,9 @@ export function StarPrompt({
                 <Box height={1} />
                 <Text wrap="wrap">{t('star-modal-body-2')}</Text>
                 <Text wrap="wrap">{t('star-modal-body-3')}</Text>
+                <Text wrap="wrap">{t('star-modal-body-4')}</Text>
+                <Text wrap="wrap">{t('star-modal-body-5')}</Text>
+                <Text wrap="wrap">{t('star-modal-body-6')}</Text>
                 <Box height={1} />
                 <ListItem
                   isFocused={selected === 0}
@@ -257,12 +277,17 @@ export function StarPrompt({
                     <Text color="error" wrap="wrap">{failure}</Text>
                   </>
                 )}
-                <Box height={1} />
-                <Divider width={textColumns} />
+                {phase !== 'failed' && (
+                  <>
+                    <Box height={1} />
+                    <Divider width={textColumns} />
+                  </>
+                )}
                 <Box height={1} />
                 <Text dimColor wrap="wrap">
                   <HintLine text={t('star-modal-hint')} />
                 </Text>
+                <Text dimColor wrap="truncate-end">{t('star-modal-hint-2')}</Text>
               </>
             )}
           </Box>

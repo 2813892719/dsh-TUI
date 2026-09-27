@@ -19,6 +19,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { StarAttempt } from '../src/components/StarPrompt.js'
 
 process.env.FORCE_COLOR = '3'
 process.env.DSH_TUI_LANG = 'zh'
@@ -32,7 +33,7 @@ process.env.USERPROFILE = fixtureHome
 const [
   { PassThrough, Writable },
   React,
-  { render, ThemeProvider },
+  { render, ThemeProvider, Box },
   { Chat },
   { LogoHeader },
   { createChannel },
@@ -247,12 +248,20 @@ interface ChatHandle {
   unmount: () => Promise<void>
 }
 
-async function mountChat(starPrompt: { dir: string; onStar?: () => void; onOpen?: () => void } | null, working = false): Promise<ChatHandle> {
+async function mountChat(
+  starPrompt: { dir: string; onStar?: () => StarAttempt | Promise<StarAttempt>; onOpen?: () => void } | null,
+  working = false,
+): Promise<ChatHandle> {
   const stdout = new FakeStdout(100)
   stdout.rows = 28
   const stdin = new FakeStdin()
   const instance = await render(
-    <Chat channel={makeChatChannel(working) as never} questionStore={new QuestionStore()} starPrompt={starPrompt} />,
+    // Chat 包在**视口大小**的盒子里：真实运行时是 alt-screen（根=整屏），
+    // 而内联夹具的根只有内容高——弹窗卡片是 absolute 且贴根底，根太矮时
+    // 卡片顶端会被裁掉（实测标题整行消失）。包一层即等价于真机的根。
+    <Box width={100} height={28} flexDirection="column">
+      <Chat channel={makeChatChannel(working) as never} questionStore={new QuestionStore()} starPrompt={starPrompt} />
+    </Box>,
     { stdout, stdin, stderr: new FakeStderr(), exitOnCtrlC: false, patchConsole: false },
   )
   return {
@@ -265,7 +274,7 @@ async function mountChat(starPrompt: { dir: string; onStar?: () => void; onOpen?
   }
 }
 
-const modalShown = (text: string) => text.includes('不知不觉') && text.includes('给 dshTUI 一个 Star')
+const modalShown = (text: string) => text.includes('不知不觉') && text.includes('投喂一颗 Star')
 
 // C：99h 弹一次；Enter 走 star → 庆祝 → 自己收场；双击 Enter 只算一次；记账落档。
 {
@@ -281,8 +290,8 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   const plain = chat.plain()
   check('C2 title rides the card border', plain.includes('已经陪你 99 小时了') && plain.includes('╭'))
   check('C3 both actions and the Esc hint render',
-    plain.includes('在浏览器中打开 GitHub') && plain.includes('Esc 以后再说'))
-  check('C4 selection pointer starts on the star row', plain.includes(`${POINTER} 给 dshTUI 一个 Star`))
+    plain.includes('在浏览器中打开 GitHub') && plain.includes('Esc 下次一定'))
+  check('C4 selection pointer starts on the star row', plain.includes(`${POINTER} 投喂一颗 Star`))
   check('C5 the modal carries the pixel whale while graphics are off', chat.stdout.frames.join('').includes(WHALE_OUTLINE))
   check('C6 the passive star line yields to the modal', !plain.includes('已陪你'))
   check('C7 the milestone is marked as asked exactly one tier up', readCelebrated(dir) === 3)
