@@ -214,6 +214,7 @@ export function StarPrompt({
               phase={phase}
               imagesAvailable={imagesAvailable}
               maidSource={maidSource}
+              background={terminalBackground}
             />
           )}
           {/* 列高钉死成艺术槽的高度（16 行）：让列比槽矮 1 行时，行内
@@ -230,8 +231,11 @@ export function StarPrompt({
             {celebrating ? (
               <>
                 <Text wrap="wrap">{t('star-modal-thanks-1')}</Text>
-                <Text wrap="wrap">{t('star-modal-thanks-2')}</Text>
                 <Box height={1} />
+                <Text wrap="wrap">{t('star-modal-thanks-2')}</Text>
+                <Text wrap="wrap">{t('star-modal-thanks-3')}</Text>
+                {/* 弹性留白把页脚推到底部：感谢文案不再"全挤在上面"。 */}
+                <Box flexGrow={1} />
                 <Divider width={textColumns} />
                 <Box height={1} />
                 <Text dimColor wrap="wrap">
@@ -306,11 +310,13 @@ function ArtSlot({
   phase,
   imagesAvailable,
   maidSource,
+  background,
 }: {
   celebrating: boolean
   phase: 'ask' | 'working' | 'done' | 'failed'
   imagesAvailable: boolean
   maidSource: ReturnType<typeof useMaidPortrait>
+  background: `#${string}`
 }): React.ReactNode {
   const raster = imagesAvailable && maidSource !== undefined
   const frame = useWhaleFrames(
@@ -318,7 +324,19 @@ function ArtSlot({
   )
   if (celebrating) {
     return (
-      <Box width={ART_COLUMNS} height={ART_ROWS} flexShrink={0} flexDirection="column" alignItems="center" justifyContent="center">
+      // `opaque` + 显式底色：庆祝态把艺术槽整块盖住重画。真图女仆娘是
+      // Sixel 光栅，像素会活过单元格写入——不声明遮挡时换画会在槽位里
+      // 留下一块旧图的残影（实机截图上那圈浅色底）。
+      <Box
+        width={ART_COLUMNS}
+        height={ART_ROWS}
+        flexShrink={0}
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor={background}
+        opaque
+      >
         <Confetti width={ART_COLUMNS} />
         <WhaleArt frameIndex={frame} width={ART_COLUMNS} />
       </Box>
@@ -376,33 +394,34 @@ const CELEBRATION_FRAMES = [
   WHALE_FRAME_INDEX.tail3, WHALE_FRAME_INDEX.tail4, STANDARD_FRAME_INDEX,
 ].map(frame => ({ frame, ms: 140 }))
 
-/** Confetti glyphs and their colours (theme tokens, cycled). */
-const CONFETTI_GLYPHS = ['✦', '✧', '⋆', '✨', '⭐', '·'] as const
-const CONFETTI_COLORS = ['accent', 'success', 'warning', 'activity', undefined] as const
-const CONFETTI_FRAMES = 4
+/** 星屑只用两种字形、两种颜色：随机撒点看着像噪点（实机反馈"烟花丑"），
+ *  稀疏 + 单调才像"落下来的星光"。 */
+const CONFETTI_GLYPHS = ['✦', '✧'] as const
+const CONFETTI_COLORS = ['accent', 'activity'] as const
+const CONFETTI_FRAMES = 3
 const CONFETTI_ROWS = 3
+/** 每隔几列一颗（越大越稀）。 */
+const CONFETTI_STRIDE = 4
 
 /**
- * Pre-computed confetti frames (glyph + colour per cell, run-length encoded
- * per row). Deterministic: a fixed LCG per frame means every render of the
- * same frame paints the same sparkles, so the animation neither flickers
- * nor re-rolls on unrelated re-renders.
+ * 预生成的星屑帧（逐格字形 + 颜色，按行做游程压缩）。**不是每帧重撒**：
+ * 每列有自己的相位，帧号只是把整片图案下移一行——看起来是星星在往下落，
+ * 而不是随机闪烁。纯函数、无随机数，同一帧永远画同一片。
  */
-const CONFETTI: readonly (readonly (readonly { readonly text: string; readonly color: (typeof CONFETTI_COLORS)[number] }[])[])[] =
-  Array.from({ length: CONFETTI_FRAMES }, (_, frameIndex) => {
-    let seed = frameIndex * 7919 + 104729
-    const random = (): number => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff
-      return seed / 0x7fffffff
-    }
-    return Array.from({ length: CONFETTI_ROWS }, () => {
-      const runs: { text: string; color: (typeof CONFETTI_COLORS)[number] }[] = []
-      let current: (typeof CONFETTI_COLORS)[number] = undefined
+/** 一段同色游程（`color` 为 undefined = 默认前景）。 */
+type ConfettiRun = { readonly text: string; readonly color: (typeof CONFETTI_COLORS)[number] | undefined }
+
+const CONFETTI: readonly (readonly (readonly ConfettiRun[])[])[] =
+  Array.from({ length: CONFETTI_FRAMES }, (_, frameIndex) =>
+    Array.from({ length: CONFETTI_ROWS }, (_, row) => {
+      const runs: { text: string; color: ConfettiRun['color'] }[] = []
+      let current: ConfettiRun['color'] = undefined
       let buffer = ''
       for (let column = 0; column < ART_COLUMNS; column++) {
-        const empty = random() < 0.55
-        const glyph = empty ? ' ' : CONFETTI_GLYPHS[Math.floor(random() * CONFETTI_GLYPHS.length)]!
-        const color = empty ? undefined : CONFETTI_COLORS[Math.floor(random() * CONFETTI_COLORS.length)]
+        const star = column % CONFETTI_STRIDE === 0
+          && (row + frameIndex) % CONFETTI_ROWS === (column / CONFETTI_STRIDE) % CONFETTI_ROWS
+        const glyph = star ? CONFETTI_GLYPHS[(column / CONFETTI_STRIDE) % CONFETTI_GLYPHS.length]! : ' '
+        const color = star ? CONFETTI_COLORS[(column / CONFETTI_STRIDE) % CONFETTI_COLORS.length] : undefined
         if (color !== current) {
           if (buffer !== '') runs.push({ text: buffer, color: current })
           buffer = ''
@@ -412,8 +431,7 @@ const CONFETTI: readonly (readonly (readonly { readonly text: string; readonly c
       }
       if (buffer !== '') runs.push({ text: buffer, color: current })
       return runs
-    })
-  })
+    }))
 
 /** One confetti band, advancing a frame every 160ms while it is mounted. */
 function Confetti({ width }: { width: number }): React.ReactNode {
@@ -437,7 +455,7 @@ function useConfettiFrame(): number {
   React.useEffect(() => {
     const timer = setInterval(() => {
       setFrame(previous => (previous + 1) % CONFETTI_FRAMES)
-    }, 160)
+    }, 220)
     ;(timer as { unref?: () => void }).unref?.()
     return () => { clearInterval(timer) }
   }, [])

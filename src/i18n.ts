@@ -736,7 +736,8 @@ const dict = {
   // star 成功后的庆祝态（礼花 + 鲸鱼喷水），几秒后卡片自己收场。
   'star-modal-thanks-title': { zh: '⭐ 收到，谢谢！', en: '⭐ Got it — thank you!' },
   'star-modal-thanks-1': { zh: '你的 star 已经点亮了 dshTUI。', en: 'Your star just lit up dsh-TUI.' },
-  'star-modal-thanks-2': { zh: '我们会继续把它做好，陪你走得更远。', en: 'We will keep making it better, and keep you company further.' },
+  'star-modal-thanks-2': { zh: '我们会继续把它做好，', en: 'We will keep making it better,' },
+  'star-modal-thanks-3': { zh: '陪你走得更远。', en: 'and keep you company further.' },
   'star-modal-thanks-hint': { zh: '**Enter** / **Esc** 关闭', en: '**Enter** / **Esc** to close' },
   'logo-tip-prefix': { zh: '提示：', en: 'Tip: ' },
   'logo-tip-more': { zh: '更多技巧', en: 'more tips' },
