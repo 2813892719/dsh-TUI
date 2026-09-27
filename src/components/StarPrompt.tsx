@@ -29,7 +29,7 @@ const MIN_ART_ROWS = 23
 /** Dwell on the standard pose before the fallback whale's intro loops. */
 const WHALE_REST_MS = 3000
 /** How long the celebration stays before the card closes itself. */
-const CELEBRATION_MS = 3400
+const CELEBRATION_MS = 4200
 
 /** What a star attempt came back with (the modal renders each outcome). */
 export type StarAttempt =
@@ -234,6 +234,7 @@ export function StarPrompt({
                 <Box height={1} />
                 <Text wrap="wrap">{t('star-modal-thanks-2')}</Text>
                 <Text wrap="wrap">{t('star-modal-thanks-3')}</Text>
+                <Text wrap="wrap">{t('star-modal-thanks-4')}</Text>
                 {/* 弹性留白把页脚推到底部：感谢文案不再"全挤在上面"。 */}
                 <Box flexGrow={1} />
                 <Divider width={textColumns} />
@@ -386,28 +387,40 @@ function useWhaleFrames(mode: 'intro' | 'celebrate' | 'none'): number {
   return frame
 }
 
-/** The spout loop: bloom up 1→6, settle, wag once, settle — then repeat. */
-const CELEBRATION_FRAMES = [
-  WHALE_FRAME_INDEX.spout1, WHALE_FRAME_INDEX.spout2, WHALE_FRAME_INDEX.spout3,
-  WHALE_FRAME_INDEX.spout4, WHALE_FRAME_INDEX.spout5, WHALE_FRAME_INDEX.spout6,
-  STANDARD_FRAME_INDEX, WHALE_FRAME_INDEX.tail1, WHALE_FRAME_INDEX.tail2,
-  WHALE_FRAME_INDEX.tail3, WHALE_FRAME_INDEX.tail4, STANDARD_FRAME_INDEX,
-].map(frame => ({ frame, ms: 140 }))
-
-/** 星屑只用两种字形、两种颜色：随机撒点看着像噪点（实机反馈"烟花丑"），
- *  稀疏 + 单调才像"落下来的星光"。 */
-const CONFETTI_GLYPHS = ['✦', '✧'] as const
-const CONFETTI_COLORS = ['accent', 'activity'] as const
-const CONFETTI_FRAMES = 3
-const CONFETTI_ROWS = 3
-/** 每隔几列一颗（越大越稀）。 */
-const CONFETTI_STRIDE = 4
-
 /**
- * 预生成的星屑帧（逐格字形 + 颜色，按行做游程压缩）。**不是每帧重撒**：
- * 每列有自己的相位，帧号只是把整片图案下移一行——看起来是星星在往下落，
- * 而不是随机闪烁。纯函数、无随机数，同一帧永远画同一片。
+ * The celebration loop, paced instead of frantic: the spout blooms up with
+ * easing (130→100ms), falls back slower (110→180ms), rests, then ONE gentle
+ * tail wag, then rests again——约 3.2s 一轮，与卡片的关闭时间同量级。
  */
+const CELEBRATION_FRAMES = [
+  { frame: WHALE_FRAME_INDEX.spout1, ms: 130 },
+  { frame: WHALE_FRAME_INDEX.spout2, ms: 120 },
+  { frame: WHALE_FRAME_INDEX.spout3, ms: 110 },
+  { frame: WHALE_FRAME_INDEX.spout4, ms: 100 },
+  { frame: WHALE_FRAME_INDEX.spout5, ms: 100 },
+  { frame: WHALE_FRAME_INDEX.spout6, ms: 110 },
+  { frame: WHALE_FRAME_INDEX.spout5, ms: 120 },
+  { frame: WHALE_FRAME_INDEX.spout4, ms: 130 },
+  { frame: WHALE_FRAME_INDEX.spout3, ms: 150 },
+  { frame: WHALE_FRAME_INDEX.spout2, ms: 170 },
+  { frame: WHALE_FRAME_INDEX.spout1, ms: 190 },
+  { frame: STANDARD_FRAME_INDEX, ms: 620 },
+  { frame: WHALE_FRAME_INDEX.tail1, ms: 180 },
+  { frame: WHALE_FRAME_INDEX.tail2, ms: 200 },
+  { frame: WHALE_FRAME_INDEX.tail3, ms: 200 },
+  { frame: WHALE_FRAME_INDEX.tail4, ms: 180 },
+  { frame: STANDARD_FRAME_INDEX, ms: 520 },
+] as const
+
+/** 星光两行、稀疏：主星（常亮，金色）+ 闪烁星（各列相位不同，同一帧只有
+ *  三分之一亮着）——比随机撒点安静，也比满屏星星精致。 */
+const CONFETTI_GLYPHS = ['✦', '✧'] as const
+const CONFETTI_COLORS = ['warning', 'accent', 'activity'] as const
+const CONFETTI_FRAMES = 3
+const CONFETTI_ROWS = 2
+/** 每几列一颗主星（常亮）。 */
+const CONFETTI_ANCHOR_STRIDE = 7
+
 /** 一段同色游程（`color` 为 undefined = 默认前景）。 */
 type ConfettiRun = { readonly text: string; readonly color: (typeof CONFETTI_COLORS)[number] | undefined }
 
@@ -418,10 +431,17 @@ const CONFETTI: readonly (readonly (readonly ConfettiRun[])[])[] =
       let current: ConfettiRun['color'] = undefined
       let buffer = ''
       for (let column = 0; column < ART_COLUMNS; column++) {
-        const star = column % CONFETTI_STRIDE === 0
-          && (row + frameIndex) % CONFETTI_ROWS === (column / CONFETTI_STRIDE) % CONFETTI_ROWS
-        const glyph = star ? CONFETTI_GLYPHS[(column / CONFETTI_STRIDE) % CONFETTI_GLYPHS.length]! : ' '
-        const color = star ? CONFETTI_COLORS[(column / CONFETTI_STRIDE) % CONFETTI_COLORS.length] : undefined
+        const anchor = column % CONFETTI_ANCHOR_STRIDE === 0
+        // 闪烁星：每列一个固定相位，逐帧轮到自己亮一次（在 3 帧里亮 1 帧）。
+        const twinkle = !anchor
+          && column % 2 === 0
+          && (column / 2 + row) % CONFETTI_FRAMES === frameIndex
+        const glyph = anchor ? CONFETTI_GLYPHS[0] : twinkle ? CONFETTI_GLYPHS[1] : ' '
+        const color = anchor
+          ? CONFETTI_COLORS[0]
+          : twinkle
+            ? (column / 2) % 2 === 0 ? CONFETTI_COLORS[1] : CONFETTI_COLORS[2]
+            : undefined
         if (color !== current) {
           if (buffer !== '') runs.push({ text: buffer, color: current })
           buffer = ''

@@ -304,14 +304,14 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   chat.stdin.write('\r')
   await new Promise<void>(resolve => setImmediate(resolve))
   chat.stdin.write('\r')
-  check('C8 a double Enter fires the star action once', await settled(() => chat.since(mark).includes('收到，谢谢'), { timeoutMs: 5000 })
+  check('C8 a double Enter fires the star action once', await settled(() => chat.since(mark).includes('收到 Star'), { timeoutMs: 5000 })
     && starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
   check('C9 a successful star celebrates instead of closing silently',
-    chat.since(mark).includes('收到，谢谢') && chat.since(mark).includes('点亮了 dshTUI'))
-  // 庆祝自己收场（3.4s）——收场后按键落回输入框，不再触发任何按钮。
+    chat.since(mark).includes('收到 Star') && chat.since(mark).includes('接住了一颗小星星'))
+  // 庆祝自己收场（约 4.2s）——收场后按键落回输入框，不再触发任何按钮。
   const mark2 = chat.mark()
-  await settle(() => !chat.since(mark2).includes('收到，谢谢'), { timeoutMs: 6000 })
-  check('C9b the celebration closes itself', !chat.since(mark2).includes('收到，谢谢'))
+  await settle(() => !chat.since(mark2).includes('收到 Star'), { timeoutMs: 8000 })
+  check('C9b the celebration closes itself', !chat.since(mark2).includes('收到 Star'))
   chat.stdin.write('\u001b[B')
   await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 与 Enter 必须是两条独立事件，不能合成粘贴
   chat.stdin.write('\r')

@@ -733,11 +733,12 @@ const dict = {
   'star-modal-open': { zh: '在浏览器中打开 GitHub', en: 'Open GitHub in the browser' },
   'star-modal-working': { zh: '正在点 star…', en: 'Starring…' },
   'star-modal-hint': { zh: '↑↓ 选择 · **Enter** 确认 · **Esc** 下次一定 (´;ω;`)', en: '↑↓ choose · **Enter** confirm · **Esc** next time (´;ω;`)' },
-  // star 成功后的庆祝态（礼花 + 鲸鱼喷水），几秒后卡片自己收场。
-  'star-modal-thanks-title': { zh: '⭐ 收到，谢谢！', en: '⭐ Got it — thank you!' },
-  'star-modal-thanks-1': { zh: '你的 star 已经点亮了 dshTUI。', en: 'Your star just lit up dsh-TUI.' },
-  'star-modal-thanks-2': { zh: '我们会继续把它做好，', en: 'We will keep making it better,' },
-  'star-modal-thanks-3': { zh: '陪你走得更远。', en: 'and keep you company further.' },
+  // star 成功后的庆祝态（星光 + 鲸鱼喷水），几秒后卡片自己收场。
+  'star-modal-thanks-title': { zh: '🌟 收到 Star 啦！', en: '🌟 Star received!' },
+  'star-modal-thanks-1': { zh: '鲸鱼娘成功接住了一颗小星星 ~', en: 'The whale girl caught a little star ~' },
+  'star-modal-thanks-2': { zh: '谢谢你的支持！', en: 'Thank you for your support!' },
+  'star-modal-thanks-3': { zh: '这颗 Star 会变成 dshTUI 继续成长的动力。', en: 'This Star becomes fuel for dsh-TUI to keep growing.' },
+  'star-modal-thanks-4': { zh: '希望以后，它也能继续陪你走很久。', en: 'May it keep you company for a long time to come.' },
   'star-modal-thanks-hint': { zh: '**Enter** / **Esc** 关闭', en: '**Enter** / **Esc** to close' },
   'logo-tip-prefix': { zh: '提示：', en: 'Tip: ' },
   'logo-tip-more': { zh: '更多技巧', en: 'more tips' },
