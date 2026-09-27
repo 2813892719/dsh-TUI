@@ -45,12 +45,57 @@ export function loadMaidPortrait(): Promise<TerminalImageSource | undefined> {
         .toBuffer({ resolveWithObject: true })
       if (decoded.info.channels !== 4
         || decoded.data.byteLength !== decoded.info.width * decoded.info.height * 4) return undefined
-      return { data: new Uint8Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength), width: decoded.info.width, height: decoded.info.height }
+      const rgba: TerminalImageSource = {
+        data: new Uint8Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
+        width: decoded.info.width,
+        height: decoded.info.height,
+      }
+      return trimTransparent(rgba)
     } catch {
       return undefined
     }
   })()
   return loadOnce
+}
+
+/**
+ * Trim fully-transparent borders (the art's canvas margins) with a small
+ * transparent pad. Sixel has no alpha — raster pixels composite onto an
+ * opaque backing — so untrimmed padding would show as an empty frame around
+ * the character; trimming hands the terminal the artwork itself and lets
+ * the same cell box draw her larger.
+ */
+function trimTransparent(source: TerminalImageSource, pad = 4): TerminalImageSource {
+  const { data, width, height } = source
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Anti-aliased edges carry alpha > 0, so only truly empty pixels fall
+      // outside the bounding box.
+      if (data[(y * width + x) * 4 + 3] === 0) continue
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX < minX || maxY < minY) return source
+  const left = Math.max(0, minX - pad)
+  const top = Math.max(0, minY - pad)
+  const right = Math.min(width - 1, maxX + pad)
+  const bottom = Math.min(height - 1, maxY + pad)
+  const cropWidth = right - left + 1
+  const cropHeight = bottom - top + 1
+  if (cropWidth === width && cropHeight === height) return source
+  const cropped = new Uint8Array(cropWidth * cropHeight * 4)
+  for (let y = 0; y < cropHeight; y++) {
+    const from = ((top + y) * width + left) * 4
+    cropped.set(data.subarray(from, from + cropWidth * 4), y * cropWidth * 4)
+  }
+  return { data: cropped, width: cropWidth, height: cropHeight }
 }
 
 /**
@@ -72,7 +117,7 @@ export function useMaidPortrait(enabled: boolean): TerminalImageSource | undefin
   return enabled ? source : undefined
 }
 
-/** The portrait's aspect (464×464 square art). */
+/** Fallback aspect before the source lands (square canvas). */
 const MAID_RATIO = 1
 
 /**
@@ -103,11 +148,15 @@ export function MaidPortrait({
 }): React.ReactNode {
   const cell = useTerminalImageCellSize() ?? DEFAULT_TERMINAL_CELL_SIZE
   const cellRatio = cell.height / cell.width
+  // Fit the TRIMMED artwork's own aspect, not the source canvas: the raster
+  // is her bounding box, so she fills the slot instead of floating in
+  // transparent padding.
+  const ratio = source !== undefined && source.height > 0 ? source.width / source.height : MAID_RATIO
   let width = maxColumns
-  let height = Math.round(width / (cellRatio * MAID_RATIO))
+  let height = Math.round(width / (cellRatio * ratio))
   if (height > maxRows) {
     height = maxRows
-    width = Math.max(1, Math.min(maxColumns, Math.round(cellRatio * height * MAID_RATIO)))
+    width = Math.max(1, Math.min(maxColumns, Math.round(cellRatio * height * ratio)))
   }
   return (
     <Image

@@ -184,8 +184,10 @@ async function renderHeader(props: Record<string, unknown>, expect?: (plain: str
   const { loadMaidPortrait } = await import('../src/components/maidPortrait.js')
   const portrait = await loadMaidPortrait()
   if (portrait === undefined) console.log('  - B6 skipped: maid asset or sharp unavailable')
-  else check('B6 the shipped portrait decodes to square RGBA', portrait.width === portrait.height
-    && portrait.width > 0 && portrait.data.byteLength === portrait.width * portrait.height * 4)
+  else check('B6 the shipped portrait decodes to RGBA and trims its transparent margins',
+    portrait.width > 0 && portrait.height > 0
+    && portrait.data.byteLength === portrait.width * portrait.height * 4
+    && (portrait.width < 464 || portrait.height < 464))
 }
 
 // ── C–F. 弹窗（挂真实 Chat） ────────────────────────────────────────────────

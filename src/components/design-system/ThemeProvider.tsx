@@ -67,12 +67,22 @@ type ThemeContextValue = {
    * swaps the palette; false when the name is unknown or cannot persist.
    */
   setTheme: (name: string) => boolean
+  /**
+   * The colour the terminal actually shows behind the UI, as `#rrggbb`:
+   * the OSC 11 answer when the terminal gave one, else white/black by the
+   * rendered palette's lightness. Terminal-image placements need it as
+   * their opaque backing (Sixel has no alpha — transparent pixels must
+   * composite onto something), and it is the same target the backdrop
+   * shade fades toward.
+   */
+  terminalBackground: `#${string}`
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: 'dark',
   autoBase: 'dark',
   setTheme: () => false,
+  terminalBackground: '#000000',
 })
 
 /**
@@ -279,8 +289,18 @@ export function ThemeProvider({
       ? active
       : AUTO_THEME_NAME
   const value = React.useMemo(
-    () => ({ theme: renderedTheme, autoBase, setTheme }),
-    [renderedTheme, autoBase, setTheme],
+    () => ({
+      theme: renderedTheme,
+      autoBase,
+      setTheme,
+      // 与下面 setShadeTarget 用同一个口径（OSC 11 的回答，缺失时按明暗取
+      // 白/黑）——terminal 图像的不透明衬底就合成到这个颜色上。
+      terminalBackground: hexRgb(
+        detectedBackground
+          ?? (isLightThemeActive(renderedTheme) ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }),
+      ),
+    }),
+    [renderedTheme, autoBase, setTheme, detectedBackground],
   )
 
   useEffect(() => {
@@ -311,4 +331,20 @@ export function ThemeProvider({
 export function useTheme(): [string, (name: string) => boolean] {
   const { theme, setTheme } = useContext(ThemeContext)
   return [theme, setTheme]
+}
+
+/** `{r,g,b}` → `#rrggbb` for colour strings the style layer accepts. */
+function hexRgb(color: { r: number; g: number; b: number }): `#${string}` {
+  const part = (value: number): string =>
+    Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')
+  return `#${part(color.r)}${part(color.g)}${part(color.b)}`
+}
+
+/**
+ * The colour the terminal shows behind the UI (`#rrggbb`): the OSC 11
+ * answer when available, else white/black by palette lightness. Terminal
+ * image placements use it as their opaque Sixel backing.
+ */
+export function useTerminalBackground(): `#${string}` {
+  return useContext(ThemeContext).terminalBackground
 }

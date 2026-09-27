@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Box, Text, useAnimationFrame, useTerminalImages, useTerminalSize } from '../ui.js'
 import { getTheme } from '../theme.js'
-import { useTheme } from './design-system/ThemeProvider.js'
+import { useTheme, useTerminalBackground } from './design-system/ThemeProvider.js'
 import { parseRGB } from './Spinner/spinnerUtils.js'
 import { renderBigText } from './bigfont.js'
 import { COLUMN_GAP, WHALE_BOX_WIDTH, resolveSplashLayout } from './splashLayout.js'
@@ -212,6 +212,8 @@ export function LogoV2({
   }, [heartSeq, heartKey, settled, whaleIdle, whaleFrozen])
 
   const [themeName] = useTheme()
+  /** 终端真底色（Sixel 不透明衬底；见渲染处的注释）。 */
+  const terminalBackground = useTerminalBackground()
   const theme = getTheme(themeName)
   const { columns } = useTerminalSize()
 
@@ -374,21 +376,22 @@ export function LogoV2({
             }}
           >
             {whaleGirl ? (
-              // 固定 15 行高、底色铺满槽位：真图（30×15）与字符画女仆娘
-              //（同样 30×15）共用同一个盒，真图解码完成换画时头部高度不
-              // 跳；显式底色也是 Sixel 的不透明衬底（透明像素合成到主题
-              // 背景色上）。最优先永远是真图，字符画只是协议不可用时的
-              // 保底（作者占位，之后会换更好看的）。
+              // 固定 18 行高、底色铺满槽位：真图与字符画女仆娘共用同一个
+              // 盒，真图解码完成换画时头部高度不跳。显式底色**必须是终端
+              // 真底色**（OSC 11 的回答；见 useTerminalBackground）——Sixel
+              // 没有 alpha，透明像素得合成到某个不透明衬底上，用错颜色就会
+              // 出现一整块突兀的色块（theme.background 是徽标填充色，不是
+              // 终端底色）。最优先永远是真图，字符画只是协议不可用时的保底。
               <Box
                 width={WHALE_BOX_WIDTH}
-                height={15}
+                height={18}
                 flexDirection="row"
                 justifyContent="center"
                 alignItems="center"
-                backgroundColor="background"
+                backgroundColor={terminalBackground}
               >
                 {maidImageActive ? (
-                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={15} presentation="transcript" />
+                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={18} presentation="transcript" />
                 ) : (
                   <WhaleGirlArt width={WHALE_BOX_WIDTH} />
                 )}
