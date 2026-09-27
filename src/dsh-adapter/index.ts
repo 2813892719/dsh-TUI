@@ -254,8 +254,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
 }), [
   'diffLayout', 'thinkingFold', 'toolBackground', 'scrollGutter', 'pageMargin',
   'foldTerminalCommand', 'promptSessionLabel', 'expandEditor', 'smoothStreaming',
-  'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'splashFont', 'minimal',
-  'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'minimal',
+  'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'splashFont', 'minimal',
   'lang', 'fullscreen', 'terminalImages', 'shortcuts',
 ])
 
