@@ -267,6 +267,7 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   check('C5 the modal carries the maid portrait', chat.stdout.frames.join('').includes(MAID_HAIR))
   check('C6 the passive star line yields to the modal', !plain.includes('已陪你'))
   check('C7 the milestone is marked as asked exactly one tier up', readCelebrated(dir) === 3)
+  await sleep(300) // 固定窗:pacing 弹窗画出来≠useInput 已订阅（passive effect 晚于绘制一拍），发键前等订阅就绪
 
   const mark = chat.mark()
   // 跨 tick 的两次 Enter：若同一毫秒送达，第二次被 StarPrompt 的双发
@@ -276,15 +277,15 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   chat.stdin.write('\r')
   await new Promise<void>(resolve => setImmediate(resolve))
   chat.stdin.write('\r')
-  await sleep(500)
+  await settle(() => chat.stdout.frames.length > mark && !chat.since(mark).includes('在浏览器中打开 GitHub'))
   check('C8 a double Enter fires the star action once (dedup guard)', starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
   check('C9 the modal closed after the action', !chat.since(mark).includes('在浏览器中打开 GitHub'))
   // 关闭后不得抢键：↓ + Enter 落回输入框，不再触发任何按钮。
   const mark2 = chat.mark()
   chat.stdin.write('\u001b[B')
-  await sleep(250)
+  await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 移动选择与 Enter 必须是两条独立事件，不能合成粘贴
   chat.stdin.write('\r')
-  await sleep(400)
+  await sleep(400) // 固定窗:探针 关闭后的按键不得再触发动作——"无新调用"没有可轮询锚点，只能等观察窗再断言不变
   check('C10 keys after close reach the composer, not the dead modal', starCalls.length === 1 && !chat.since(mark2).includes('在浏览器中打开 GitHub'))
   await chat.unmount()
 }
@@ -296,14 +297,15 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   const calls: string[] = []
   const chat = await mountChat({ dir, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
   check('D1 the modal opens again on a fresh ledger', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
+  await sleep(300) // 固定窗:pacing 同 C：画出来≠已订阅，发键前等订阅就绪
   const mark = chat.mark()
   chat.stdin.write('\u001b')
-  await sleep(400)
+  await settle(() => chat.stdout.frames.length > mark && !chat.since(mark).includes('在浏览器中打开 GitHub'))
   check('D2 Esc closes the modal', !chat.since(mark).includes('在浏览器中打开 GitHub'))
   chat.stdin.write('\u001b[B')
-  await sleep(250)
+  await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 与 Enter 保持两条独立事件
   chat.stdin.write('\r')
-  await sleep(400)
+  await sleep(400) // 固定窗:探针 Esc 关闭后的按键不得触发任何动作——无锚点的不变式只能等观察窗
   check('D3 keys after Esc-close do not fire any action', calls.length === 0, `calls=${calls.join(',')}`)
   await chat.unmount()
 
@@ -311,13 +313,17 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   seedUsage(dir2, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
   const chat2 = await mountChat({ dir: dir2, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
   check('D4 the modal opens on the second fresh ledger', await settled(() => modalShown(chat2.plain()), { timeoutMs: 5000 }))
+  await sleep(300) // 固定窗:pacing 同上，发键前等 useInput 订阅就绪
   const mark2 = chat2.mark()
   chat2.stdin.write('\u001b[B')
   await settle(() => chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
   check('D5 ↓ moves the cursor onto the browser action', chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
+  // Enter 前另起 mark：↓ 的重绘帧里本来就带着弹窗正文，累计窗口从它
+  // 之后起算，"关闭"才成立（与 C9/D2 同一模式）。
   chat2.stdin.write('\r')
-  await sleep(400)
-  check('D6 Enter on the browser action fires open and closes', calls.length === 1 && calls[0] === 'open' && !chat2.since(mark2).includes('不知不觉'))
+  const mark3 = chat2.mark()
+  await settle(() => chat2.stdout.frames.length > mark3)
+  check('D6 Enter on the browser action fires open and closes', calls.length === 1 && calls[0] === 'open' && !chat2.since(mark3).includes('在浏览器中打开 GitHub'))
   await chat2.unmount()
 }
 
@@ -326,7 +332,7 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   const dir = join(fixtureHome, 'case-e')
   seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 0 })
   const chat = await mountChat({ dir })
-  await sleep(1500)
+  await sleep(1500) // 固定窗:探针 非历史档不得弹窗——"不出现"没有可轮询锚点，观察窗须盖过 700ms 的弹窗延迟
   check('E1 a non-historic milestone never opens the modal', !chat.plain().includes('不知不觉'))
   check('E2 a non-historic milestone leaves the ledger untouched', readCelebrated(dir) === 0)
   await chat.unmount()
@@ -337,7 +343,7 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   const dir = join(fixtureHome, 'case-f')
   seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
   const chat = await mountChat({ dir }, true)
-  await sleep(1500)
+  await sleep(1500) // 固定窗:探针 忙时启动不得弹窗——同上，观察窗盖过 700ms 弹窗延迟
   check('F1 a busy startup never opens the modal', !chat.plain().includes('不知不觉'))
   check('F2 a busy startup does not mark the milestone', readCelebrated(dir) === 2)
   await chat.unmount()
