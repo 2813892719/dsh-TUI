@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regression: session selectors and Web startup flag values are not prompt text.
+ * Regression: startup flag values are not prompt text, but tokens after -- are.
  *
  * Run after build:
  *   node scripts/verify-initial-prompt.mjs
@@ -38,6 +38,16 @@ const cases = [
   ['inline Web flag values are not prompt', ['--host=127.0.0.1', '--port=3099', '--trusted-host=a:1'], ''],
   ['inline single-value flags preserve positionals', ['--host=127.0.0.1', '--port=3099', 'follow', 'up'], 'follow up'],
   ['boolean Web flag has no prompt', ['--no-open'], ''],
+  ['-- preserves a literal --host prompt', ['--', '--host', 'example'], '--host example'],
+  ['-- preserves all flag-shaped prompt tokens', ['--', '--port', '3099', '--trusted-host', 'a:1', 'b:2', '--resume=sid-1', '--fullscreen'], '--port 3099 --trusted-host a:1 b:2 --resume=sid-1 --fullscreen'],
+  ['-- retains preceding prompt text', ['explain', '--', '--host', 'example'], 'explain --host example'],
+  ['-- ends option parsing after single-value flags', ['--resume', 'sid-1', '--host', '127.0.0.1', '--port', '3099', '--', '--resume', 'example'], '--resume example'],
+  ['-- ends variadic values and preserves the prompt', ['--trusted-host', 'a:1', 'b:2', '--', '--host', 'example'], '--host example'],
+  ['missing flag value does not consume --', ['--host', '--', '--port', 'example'], '--port example'],
+  ['empty variadic values do not consume --', ['--trusted-host', '--', '--host', 'example'], '--host example'],
+  ['only the first -- is a separator', ['--', '--', '--host', 'example'], '-- --host example'],
+  ['-- alone has no prompt', ['--'], ''],
+  ['trailing -- preserves existing prompt text', ['run', 'the tests', '--'], 'run the tests'],
 ]
 
 for (const [name, args, expected] of cases) {
