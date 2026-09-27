@@ -1,0 +1,351 @@
+/**
+ * 女仆娘立绘 + "求 star" 开屏弹窗回归：
+ *   A. channel 语义：`dsh-tui.whaleGirl` 默认关、显式开、setWhaleGirl
+ *      只在变化时通知；
+ *   B. 头部渲染（真实 LogoHeader → LogoV2）：maid 档画女仆娘（两个女仆
+ *      专属色都在）且不再画鲸鱼描边；默认档仍是鲸鱼；`whale:false` 时
+ *      女仆娘也不画（文字列保留）；48 列鲸鱼独占档在 maid 档下保持
+ *      「只画立绘、整列文字不画」的阶梯契约；
+ *   C. 弹窗（挂真实 Chat + fake channel）：99h 档开屏弹一次（标题/正文/
+ *      两颗按钮/▸ 光标/女仆娘），标语行让位（「已陪你」不出现），账本
+ *      记到下一档；连按两次 Enter 只触发一次 star 动作（去重守卫）；
+ *   D. Esc 关闭后不抢键（后续 ↓/Enter 落回输入框，不再触发按钮）；
+ *      ↓ 可把 ▸ 移到「在浏览器中打开」，Enter 走 open 动作；
+ *   E. 非历史档（24h）不弹窗、不记账；
+ *   F. 回合进行中（working）不弹窗、**不记账**——留给下一次启动。
+ * 运行：node --import tsx/esm scripts/verify-whale-girl.tsx
+ */
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+process.env.FORCE_COLOR = '3'
+process.env.DSH_TUI_LANG = 'zh'
+// HOME/USERPROFILE 指到空夹具目录：DATA_DIR（~/.dsh-tui）不碰真实数据，
+// LogoV2 的 recordLaunch 也落在夹具里；弹窗判定的账本目录另用
+// starPrompt.dir 逐 case 注入（一进程多 case，互不串档）。
+const fixtureHome = mkdtempSync(join(tmpdir(), 'verify-whale-girl-'))
+process.env.HOME = fixtureHome
+process.env.USERPROFILE = fixtureHome
+
+const [
+  { PassThrough, Writable },
+  React,
+  { render, ThemeProvider },
+  { Chat },
+  { LogoHeader },
+  { createChannel },
+  { QuestionStore },
+  { settle, settled, sleep },
+] = await Promise.all([
+  import('node:stream'),
+  import('react'),
+  import('../src/ui.js'),
+  import('../src/screens/Chat.js'),
+  import('../src/components/MessageList.js'),
+  import('../src/dsh-adapter/channel.js'),
+  import('../src/dsh-adapter/questions.js'),
+  import('./lib/term-test.mjs'),
+])
+
+let failures = 0
+let checks = 0
+function check(name: string, ok: boolean, extra = ''): void {
+  checks += 1
+  if (ok) console.log(`  ✓ ${name}`)
+  else {
+    failures++
+    console.error(`  ✗ ${name}${extra ? `  (${extra})` : ''}`)
+  }
+}
+
+class FakeStdout extends Writable {
+  columns: number
+  rows = 30
+  isTTY = true
+  frames: string[] = []
+  constructor(columns: number) {
+    super()
+    this.columns = columns
+  }
+  _write(chunk: unknown, _encoding: BufferEncoding, callback: () => void) {
+    this.frames.push(String(chunk))
+    callback()
+  }
+}
+
+class FakeStderr extends Writable {
+  isTTY = true
+  _write(_chunk: unknown, _encoding: BufferEncoding, callback: () => void) {
+    callback()
+  }
+}
+
+class FakeStdin extends PassThrough {
+  isTTY = true
+  setRawMode() { return this }
+  ref() { return this }
+  unref() { return this }
+}
+
+const plainText = (frames: readonly string[]) => frames
+  .join('')
+  .replace(/\x1b\[(\d+)C/g, (_, n) => ' '.repeat(Number(n)))
+  .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+  .replace(/\x1b\]9;[^\x07]*\x07/g, '')
+
+// 女仆娘专属色（取自 whaleGirlSprite 的发色与高光，鲸鱼六色调里没有），
+// 鲸鱼侧用描边色互证「换了画的是谁」。
+const MAID_HAIR = '\x1b[38;2;43;56;120m'
+const MAID_WHITE = '\x1b[38;2;253;253;253m'
+const WHALE_OUTLINE = '\x1b[38;2;20;38;96m'
+
+// ── A. channel 语义 ─────────────────────────────────────────────────────────
+function makeChannel(options = {}) {
+  const handlers = new Map()
+  const ctx = {
+    on(event: string, handler: () => void) {
+      handlers.set(event, handler)
+      return () => handlers.delete(event)
+    },
+    get() { return undefined },
+    logger: { warn() {} },
+  }
+  const agent = {
+    id: 'a1',
+    status: 'idle',
+    session: { id: 's1', seq: 0, events: [] },
+    ctx: { on: () => () => {} },
+    followup() {},
+    steer() {},
+  }
+  return createChannel(ctx, agent, {
+    model: 'deepseek-chat',
+    cwd: '/tmp',
+    provider: 'deepseek',
+    activity: false,
+    ...options,
+  })
+}
+
+{
+  const channel = makeChannel() as { whaleGirl: boolean; setWhaleGirl(v: boolean): void; subscribe(fn: () => void): () => void }
+  check('A1 channel defaults whaleGirl to off', channel.whaleGirl === false)
+  check('A2 channel preserves an explicit whaleGirl=true', (makeChannel({ whaleGirl: true }) as { whaleGirl: boolean }).whaleGirl === true)
+  let notified = 0
+  channel.subscribe(() => { notified += 1 })
+  channel.setWhaleGirl(true)
+  check('A3 setWhaleGirl(true) updates and notifies once', channel.whaleGirl === true && notified === 1)
+  channel.setWhaleGirl(true)
+  check('A4 repeated setWhaleGirl(true) is a no-op', notified === 1)
+  channel.setWhaleGirl(false)
+  check('A5 setWhaleGirl(false) toggles back', channel.whaleGirl === false && notified === 2)
+}
+
+// ── B. 头部渲染（真实 LogoHeader） ──────────────────────────────────────────
+async function renderHeader(props: Record<string, unknown>, expect?: (plain: string) => boolean) {
+  const stdout = new FakeStdout(typeof props.columns === 'number' ? props.columns as number : 120)
+  const { columns, ...logoProps } = props
+  const instance = await render(
+    React.createElement(ThemeProvider, { theme: 'dark' }, React.createElement(LogoHeader, logoProps)),
+    { stdout, stderr: new FakeStderr(), stdin: new FakeStdin(), exitOnCtrlC: false, patchConsole: false },
+  )
+  const ready = expect ?? ((plain: string) => plain.includes('dsh-TUI') && plain.includes('whale-model-probe'))
+  await settle(() => ready(plainText(stdout.frames)))
+  const raw = stdout.frames.join('')
+  await instance.unmount()
+  return { raw, plain: plainText(stdout.frames) }
+}
+
+{
+  const bothFit = await renderHeader({
+    columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true,
+  }, plain => plain.includes('dsh-TUI'))
+  check('B1 maid mode paints the portrait, not the whale', bothFit.raw.includes(MAID_HAIR) && bothFit.raw.includes(MAID_WHITE) && !bothFit.raw.includes(WHALE_OUTLINE), 'maid colors / whale outline')
+  check('B2 maid mode keeps the text column', bothFit.plain.includes('dsh-TUI') && bothFit.plain.includes('whale-model-probe'))
+
+  const defaultArt = await renderHeader({ columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd' })
+  check('B3 default stays the pixel whale', defaultArt.raw.includes(WHALE_OUTLINE) && !defaultArt.raw.includes(MAID_HAIR))
+
+  const artOff = await renderHeader({ columns: 120, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true, whale: false })
+  check('B4 whale:false drops the maid too (text-only header)', !artOff.raw.includes(MAID_HAIR) && !artOff.raw.includes(WHALE_OUTLINE) && artOff.plain.includes('dsh-TUI'))
+
+  const whaleOnly = await renderHeader({
+    columns: 48, model: 'whale-model-probe', cwd: '/whale/cwd', whaleGirl: true,
+  }, plain => !plain.includes('dsh-TUI'))
+  check('B5 whale-only tier keeps the ladder contract in maid mode',
+    whaleOnly.raw.includes(MAID_HAIR) && !whaleOnly.plain.includes('dsh-TUI') && !whaleOnly.plain.includes('whale-model-probe'))
+}
+
+// ── C–F. 弹窗（挂真实 Chat） ────────────────────────────────────────────────
+const HOUR_MS = 3_600_000
+function seedUsage(dir: string, stats: { launches: number; totalMs: number; celebrated: number }): void {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'usage.json'), JSON.stringify(stats))
+}
+const readCelebrated = (dir: string): number =>
+  (JSON.parse(readFileSync(join(dir, 'usage.json'), 'utf8')) as { celebrated: number }).celebrated
+
+function makeChatChannel(working = false) {
+  // smoke.tsx 形状的 fake channel：Chat 只读它渲染要用的面。
+  return {
+    version: 0,
+    whaleIdle: false,
+    rows: [],
+    status: 'idle' as const,
+    sessionTitle: 'probe',
+    agentId: 'probe',
+    model: 'deepseek-v4-flash',
+    provider: 'deepseek',
+    tokens: { input: 0, output: 0 },
+    cwd: 'C:/code/demo-project',
+    displayCwd: 'C:/code/demo-project',
+    gitBranch: 'main',
+    working,
+    spinnerMode: 'requesting' as const,
+    mode: { plan: false },
+    responseChars: 0,
+    activeToolCount: 0,
+    turnStart: 0,
+    lastUserText: '',
+    pending: [],
+    notifications: [],
+    contextSegments: { system: 0, prompt: 0, assistant: 0, thinking: 0, tools: 0 },
+    subscribe: () => () => {},
+    submit() {},
+    steer() {},
+    cancel() {},
+    clear() {},
+    notify() {},
+    listModels: () => Promise.resolve([]),
+    listSessions: () => [],
+    setResumeTarget: () => {},
+  }
+}
+
+interface ChatHandle {
+  stdout: FakeStdout
+  stdin: FakeStdin
+  plain: () => string
+  since: (mark: number) => string
+  mark: () => number
+  unmount: () => Promise<void>
+}
+
+async function mountChat(starPrompt: { dir: string; onStar?: () => void; onOpen?: () => void } | null, working = false): Promise<ChatHandle> {
+  const stdout = new FakeStdout(100)
+  stdout.rows = 28
+  const stdin = new FakeStdin()
+  const instance = await render(
+    <Chat channel={makeChatChannel(working) as never} questionStore={new QuestionStore()} starPrompt={starPrompt} />,
+    { stdout, stdin, stderr: new FakeStderr(), exitOnCtrlC: false, patchConsole: false },
+  )
+  return {
+    stdout,
+    stdin,
+    plain: () => plainText(stdout.frames),
+    mark: () => stdout.frames.length,
+    since: (m: number) => plainText(stdout.frames.slice(m)),
+    unmount: async () => { await instance.unmount() },
+  }
+}
+
+const modalShown = (text: string) => text.includes('不知不觉') && text.includes('给 dshTUI 一个 Star')
+
+// C：99h 弹一次；Enter 走 star；双击 Enter 只算一次；记账落档。
+{
+  const dir = join(fixtureHome, 'case-c')
+  seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const starCalls: string[] = []
+  const chat = await mountChat({ dir, onStar: () => starCalls.push('star'), onOpen: () => starCalls.push('open') })
+  check('C1 the 99h milestone opens the modal once', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
+  const plain = chat.plain()
+  check('C2 title names the milestone hours', plain.includes('已经陪你 99 小时了'))
+  check('C3 both actions and the Esc hint render',
+    plain.includes('在浏览器中打开 GitHub') && plain.includes('Esc 以后再说'))
+  check('C4 selection cursor starts on the star line', plain.includes('▸ 给 dshTUI 一个 Star'))
+  check('C5 the modal carries the maid portrait', chat.stdout.frames.join('').includes(MAID_HAIR))
+  check('C6 the passive star line yields to the modal', !plain.includes('已陪你'))
+  check('C7 the milestone is marked as asked exactly one tier up', readCelebrated(dir) === 3)
+
+  const mark = chat.mark()
+  // 跨 tick 的两次 Enter：若同一毫秒送达，第二次被 StarPrompt 的双发
+  // 去重挡掉；若晚一拍，弹窗已被第一次关掉、第二下落回输入框——两种
+  // 时序下动作都恰好触发一次。（同 tick 写入 "\r\r" 会被合并成一条多
+  // 字符粘贴事件，key.return 为假，什么也不触发——不拿来当用例。）
+  chat.stdin.write('\r')
+  await new Promise<void>(resolve => setImmediate(resolve))
+  chat.stdin.write('\r')
+  await sleep(500)
+  check('C8 a double Enter fires the star action once (dedup guard)', starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
+  check('C9 the modal closed after the action', !chat.since(mark).includes('在浏览器中打开 GitHub'))
+  // 关闭后不得抢键：↓ + Enter 落回输入框，不再触发任何按钮。
+  const mark2 = chat.mark()
+  chat.stdin.write('\u001b[B')
+  await sleep(250)
+  chat.stdin.write('\r')
+  await sleep(400)
+  check('C10 keys after close reach the composer, not the dead modal', starCalls.length === 1 && !chat.since(mark2).includes('在浏览器中打开 GitHub'))
+  await chat.unmount()
+}
+
+// D：Esc 关闭；↓ 把 ▸ 移到第二颗按钮，Enter 走 open 动作。
+{
+  const dir = join(fixtureHome, 'case-d')
+  seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const calls: string[] = []
+  const chat = await mountChat({ dir, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
+  check('D1 the modal opens again on a fresh ledger', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
+  const mark = chat.mark()
+  chat.stdin.write('\u001b')
+  await sleep(400)
+  check('D2 Esc closes the modal', !chat.since(mark).includes('在浏览器中打开 GitHub'))
+  chat.stdin.write('\u001b[B')
+  await sleep(250)
+  chat.stdin.write('\r')
+  await sleep(400)
+  check('D3 keys after Esc-close do not fire any action', calls.length === 0, `calls=${calls.join(',')}`)
+  await chat.unmount()
+
+  const dir2 = join(fixtureHome, 'case-d2')
+  seedUsage(dir2, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const chat2 = await mountChat({ dir: dir2, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
+  check('D4 the modal opens on the second fresh ledger', await settled(() => modalShown(chat2.plain()), { timeoutMs: 5000 }))
+  const mark2 = chat2.mark()
+  chat2.stdin.write('\u001b[B')
+  await settle(() => chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
+  check('D5 ↓ moves the cursor onto the browser action', chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
+  chat2.stdin.write('\r')
+  await sleep(400)
+  check('D6 Enter on the browser action fires open and closes', calls.length === 1 && calls[0] === 'open' && !chat2.since(mark2).includes('不知不觉'))
+  await chat2.unmount()
+}
+
+// E：非历史档（24h）不弹窗。
+{
+  const dir = join(fixtureHome, 'case-e')
+  seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 0 })
+  const chat = await mountChat({ dir })
+  await sleep(1500)
+  check('E1 a non-historic milestone never opens the modal', !chat.plain().includes('不知不觉'))
+  check('E2 a non-historic milestone leaves the ledger untouched', readCelebrated(dir) === 0)
+  await chat.unmount()
+}
+
+// F：回合进行中不弹、不记账（留给下一次启动）。
+{
+  const dir = join(fixtureHome, 'case-f')
+  seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const chat = await mountChat({ dir }, true)
+  await sleep(1500)
+  check('F1 a busy startup never opens the modal', !chat.plain().includes('不知不觉'))
+  check('F2 a busy startup does not mark the milestone', readCelebrated(dir) === 2)
+  await chat.unmount()
+}
+
+rmSync(fixtureHome, { recursive: true, force: true })
+if (failures > 0) {
+  console.error(`\n${failures} of ${checks} whale-girl checks FAILED.`)
+  process.exit(1)
+}
+console.log(`\nAll ${checks} whale-girl checks passed.`)

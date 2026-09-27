@@ -125,6 +125,9 @@ const GROUPS = {
     ["verify-usage-stats", ['node', '--import', 'tsx/esm', 'scripts/verify-usage-stats.mjs']],
     // 一键 star 的 gh 集成（探测/登录态/超时/失败分类，全用假执行器不联网）：
     ["verify-star-action", ['node', '--import', 'tsx/esm', 'scripts/verify-star-action.mjs']],
+    // 女仆娘立绘（whaleGirl 设置 + 头部换画/阶梯契约）与 99h/999 次"求 star"
+    // 开屏弹窗（挂真实 Chat：弹一次/记账/Esc 关且关后不抢键/忙时不弹不记账）：
+    ["verify-whale-girl", ['node', '--import', 'tsx/esm', 'scripts/verify-whale-girl.tsx']],
 // settled 子代理卡片不得永久持有动画时钟（空闲帧归零回归）：
 // 曾以 120ms/卡片持续驱动 React commit，N 张相位错开合成 ~30ms
 // 均匀帧 cadence。

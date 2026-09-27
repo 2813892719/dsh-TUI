@@ -690,6 +690,9 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
         // the idle-wakeup gate stays: an explicit `false` keeps the settled
         // header timer-free.
         whaleIdle: Schema.boolean().default(true),
+        // Maid portrait instead of the pixel whale in the header splash;
+        // off by default — the portrait is static (no idle animation).
+        whaleGirl: Schema.boolean().default(false),
         // Minimal mode: strips the header splash, emoji glyphs, and
         // decorative colors; code highlight and tool colors stay.
         minimal: Schema.boolean().default(false),
@@ -719,6 +722,7 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
       lang?: 'zh' | 'en'
       whale?: boolean
       whaleIdle?: boolean
+      whaleGirl?: boolean
       minimal?: boolean
       fullscreen?: boolean
       terminalImages?: boolean
@@ -745,6 +749,10 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
     /** Apply the idle-whale-behavior setting: live-toggle the channel flag. */
     const applyWhaleIdle = (value: { whaleIdle?: boolean }): void => {
       channel.setWhaleIdle(value.whaleIdle ?? true)
+    }
+    /** Apply the maid-portrait setting: live-swap the header art. */
+    const applyWhaleGirl = (value: { whaleGirl?: boolean }): void => {
+      channel.setWhaleGirl(value.whaleGirl ?? false)
     }
     const applyMinimal = (value: { minimal?: boolean }): void => {
       if (shadow) return
@@ -823,6 +831,7 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
       applyLayout(next)
       applyWhale(next)
       applyWhaleIdle(next)
+      applyWhaleGirl(next)
       applyMinimal(next)
       applyLang(next)
       applyDisplay(next)
@@ -1391,6 +1400,14 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
           descriptions: { zh: '鲸鱼娘闲置动画（欢迎期）' },
           hint: 'Welcome-phase idle behaviors: after the intro the whale flutters its fins, thumps its tail, and dozes off when idle; clicking wakes a dozing whale and pops a heart. The first agent turn freezes it to the static standard frame.',
           hintDescriptions: { zh: '欢迎期闲置行为：开屏后鲸鱼娘摆鱼鳍、偶尔拍尾巴，空闲会睡着冒 Z；点击唤醒睡着的鲸鱼娘并冒爱心。开始第一个任务后定格为静态标准帧。' },
+          kind: 'boolean',
+        },
+        {
+          path: ['whaleGirl'],
+          label: 'Maid portrait',
+          descriptions: { zh: '女仆娘立绘' },
+          hint: 'Swap the header splash\'s pixel whale for the author-designed maid portrait (same 40-column slot, rendered in true-color half blocks). The portrait is static: the idle animation above does not apply to it.',
+          hintDescriptions: { zh: '把开屏头部的像素鲸鱼换成项目作者绘制的女仆娘立绘（同一 40 列位，真彩半块渲染）。立绘是静态的：上面的闲置动画对她不生效。' },
           kind: 'boolean',
         },
         {

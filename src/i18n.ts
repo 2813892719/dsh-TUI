@@ -711,6 +711,16 @@ const dict = {
     zh: '一键 star 没成功：{{detail}}（也可以直接在浏览器里打开 {{url}}）',
     en: 'One-key star failed: {{detail}} (or open {{url}} in a browser)',
   },
+  // 99h / 999 次的"求 star"开屏弹窗（StarPrompt.tsx）。正文是维护者定的
+  // 原话——诚恳、不催；标题按里程碑取"小时"或"次启动"。
+  'star-modal-title-hours': { zh: '🐳 已经陪你 {{hours}} 小时了', en: '🐳 {{hours}} hours together already' },
+  'star-modal-title-launches': { zh: '🐳 已经陪你 {{launches}} 次启动了', en: '🐳 {{launches}} launches together already' },
+  'star-modal-body-1': { zh: '不知不觉，dshTUI 已经陪你走了这么久。', en: 'Before you noticed, dsh-TUI had already come this far with you.' },
+  'star-modal-body-2': { zh: '如果你喜欢它，欢迎送我们一颗小小的 Star ⭐', en: 'If you like it, a tiny Star ⭐ would mean a lot to us.' },
+  'star-modal-body-3': { zh: '你的认可，是我们继续维护和完善这个开源项目的动力。', en: 'Your recognition is what keeps us maintaining and improving this open-source project.' },
+  'star-modal-star': { zh: '给 dshTUI 一个 Star', en: 'Star dsh-TUI' },
+  'star-modal-open': { zh: '在浏览器中打开 GitHub', en: 'Open GitHub in the browser' },
+  'star-modal-hint': { zh: '↑↓ 选择 · Enter 确认 · Esc 以后再说', en: '↑↓ choose · Enter confirm · Esc not now' },
   'logo-tip-prefix': { zh: '提示：', en: 'Tip: ' },
   'logo-tip-more': { zh: '更多技巧', en: 'more tips' },
   // Upstream-drift notice (merged one-liner under the tip; copy explains

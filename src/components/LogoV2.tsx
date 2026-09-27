@@ -13,10 +13,11 @@ import { renderBigText } from './bigfont.js'
 import { COLUMN_GAP, WHALE_BOX_WIDTH, resolveSplashLayout } from './splashLayout.js'
 import { withTagline, pickSplashFont, splashFontById, type SplashFont } from './splashFonts.js'
 import { pickSplashEgg, splashStarLine, type SplashEgg } from './splashEggs.js'
-import { markStarAsked, pendingStarMilestone, recordLaunch, STAR_MILESTONES, usageSnapshot } from '../usageStats.js'
+import { isHistoricMilestone, markStarAsked, pendingStarMilestone, recordLaunch, STAR_MILESTONES, usageSnapshot } from '../usageStats.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { BRAND, FLASH, ICE, PALE, sweep } from './shimmer.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
+import { WHALE_GIRL_CENTER, WhaleGirlArt } from './WhaleGirl.js'
 import { OPENING_SEQUENCES, pickOpeningSequence, WHALE_FRAME_INDEX, type OpeningStep, type WhaleIntroId } from './whaleFrames.js'
 import { RESTING_POSE, type WhaleLayerPose } from './whaleLayers.js'
 import {
@@ -99,6 +100,7 @@ export function LogoV2({
   fontId,
   whale = true,
   whaleIdle = true,
+  whaleGirl = false,
   working = false,
   drift,
   egg,
@@ -125,6 +127,12 @@ export function LogoV2({
   starChance?: number
   /** Show the pixel whale art (settings `dsh-tui.whale`); off → text-only header. */
   whale?: boolean
+  /** Swap the header's pixel whale for the maid portrait (settings
+   * `dsh-tui.whaleGirl`; off by default). The portrait is a static piece in
+   * the same 40-column box — the ladder thresholds don't move — and the
+   * whale-only idle planner/click-hearts stay whale-only, so `whaleIdle`
+   * has nothing to animate in this mode. */
+  whaleGirl?: boolean
   /** Welcome-phase idle whale behaviors — fin flutters, tail thumps,
    * sleep after inactivity (settings `dsh-tui.whaleIdle`; on by default —
    * an explicit `false` keeps the settled header timer-free). Click-hearts
@@ -234,7 +242,9 @@ export function LogoV2({
   const pendingHeartRef = React.useRef(false)
   const tickRef = React.useRef<(() => void) | null>(null)
   React.useEffect(() => {
-    if (!settled || !whaleIdle || !showWhale || whaleFrozen) {
+    // 女仆娘档没有闲置规划器：立绘是静态的（见 prop 注释），这里多让一个
+    // `whaleGirl` 条件，开屏定格后不给她留任何定时器。
+    if (!settled || !whaleIdle || !showWhale || whaleFrozen || whaleGirl) {
       setIdlePose(null)
       tickRef.current = null
       return
@@ -289,7 +299,11 @@ export function LogoV2({
     const usage = recordLaunch()
     if (starChance === 0) return null
     if (starChance !== undefined) return STAR_MILESTONES.length - 1
-    return pendingStarMilestone(usage)
+    const pending = pendingStarMilestone(usage)
+    // 历史性时刻（99h / 999 次）不走标语行——那两档归 Chat 的开屏弹窗
+    //（弹窗自己 markStarAsked）。这里既不画也不记，档位保持待报；
+    // 弹窗这轮没机会弹（回合中等）就留给下一次启动。
+    return pending !== null && isHistoricMilestone(pending) ? null : pending
   })
   const starLine = starMilestone === null ? null : splashStarLine({ usage: usageSnapshot() })
   // 显示过就把这一档记下来，下次启动不再冒出来（同档只求一次）。
@@ -312,7 +326,7 @@ export function LogoV2({
   // visibly off-center.
   const welcomeWidth = starLine === null ? stringWidth(tagline) : starLine.width
   const welcomePad = showWhale
-    ? Math.max(0, Math.round(WHALE_CENTER - welcomeWidth / 2))
+    ? Math.max(0, Math.round((whaleGirl ? WHALE_GIRL_CENTER : WHALE_CENTER) - welcomeWidth / 2))
     : 2
 
   // 两行标题各自用字体声明的字距；下排再按 `bottomIndent` 居中——
@@ -334,8 +348,9 @@ export function LogoV2({
               // clicks do nothing. Settled: the layered planner consumes the
               // click on its next tick — run that tick immediately so the
               // heart shows instantly instead of after the current delay.
-              // Intro: the whole-frame heart pass above.
-              if (whaleFrozen) return
+              // Intro: the whole-frame heart pass above. The maid portrait
+              // is static art — clicks do nothing there either.
+              if (whaleFrozen || whaleGirl) return
               if (settled && whaleIdle) {
                 pendingHeartRef.current = true
                 tickRef.current?.()
@@ -345,11 +360,15 @@ export function LogoV2({
               }
             }}
           >
-            <WhaleArt
-              frameIndex={frameIndex}
-              pose={settled && whaleIdle && !whaleFrozen ? (idlePose ?? RESTING_POSE) : undefined}
-              width={WHALE_BOX_WIDTH}
-            />
+            {whaleGirl ? (
+              <WhaleGirlArt width={WHALE_BOX_WIDTH} />
+            ) : (
+              <WhaleArt
+                frameIndex={frameIndex}
+                pose={settled && whaleIdle && !whaleFrozen ? (idlePose ?? RESTING_POSE) : undefined}
+                width={WHALE_BOX_WIDTH}
+              />
+            )}
           </Box>
         )}
         {/* 鲸鱼独占一档（大字放不下、又还得下鲸鱼）：文字列只剩几列，画出来

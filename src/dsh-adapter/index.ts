@@ -60,6 +60,8 @@ export interface Config {
   /** Show the header whale and its idle animation. */
   whale?: boolean
   whaleIdle?: boolean
+  /** Swap the header's pixel whale for the static maid portrait. */
+  whaleGirl?: boolean
   /** Reduce decorative header content and colors. */
   minimal?: boolean
   /** Show the live working line derived in-process from base session events. */
@@ -165,6 +167,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
   effortDefault: Schema.string().required(false),
   whale: Schema.boolean().default(true),
   whaleIdle: Schema.boolean().default(true),
+  whaleGirl: Schema.boolean().default(false),
   minimal: Schema.boolean().default(false),
   activity: Schema.boolean().default(true),
   activityFrames: Schema.string().required(false),
@@ -226,7 +229,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
 }), [
   'diffLayout', 'thinkingFold', 'toolBackground', 'scrollGutter', 'pageMargin',
   'foldTerminalCommand', 'promptSessionLabel', 'expandEditor', 'smoothStreaming',
-  'mermaidDiagrams', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'minimal',
+  'mermaidDiagrams', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'minimal',
   'lang', 'fullscreen', 'terminalImages', 'shortcuts',
 ])
 

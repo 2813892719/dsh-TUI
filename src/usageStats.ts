@@ -124,8 +124,21 @@ export function pendingStarMilestone(stats: UsageStats): number | null {
   return null
 }
 
-/** 进程内闸门：一次进程、一个数据目录只记一次启动。 */
-const recorded = new Set<string>()
+/**
+ * 开屏弹窗判定：启动时由 Chat 调一次——账本文件里未报过的最高一档若
+ * 配弹窗（`99h` / `999 次`），返回其下标；其余情况（没有待报档、或待报档
+ * 是只出标语行的普通档）一律 `null`。读**文件**而不是进程缓存：LogoV2
+ * 的 `recordLaunch` 与本函数分属不同挂载层，文件是两者一致的真相源。
+ * 弹窗真正展示时由调用方 `markStarAsked` 记账，本函数只读不写。
+ * @param dir - 数据目录（测试可注入）。
+ * @returns 配弹窗且已达成的档位下标；没有则 `null`。
+ */
+export function dueStarModal(dir: string = DATA_DIR): number | null {
+  const pending = pendingStarMilestone(readUsage(dir))
+  return pending !== null && isHistoricMilestone(pending) ? pending : null
+}
+
+/** 进程内闸门：一次进程、一个数据目录只记一次启动。 */const recorded = new Set<string>()
 /** 进程内缓存的账本（按目录分开存，生产只有一个目录；测试可注入不同目录）。 */
 const caches = new Map<string, UsageStats>()
 /** 本次进程开始计时的时刻（按目录）。 */
