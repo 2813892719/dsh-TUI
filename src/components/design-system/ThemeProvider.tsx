@@ -295,10 +295,10 @@ export function ThemeProvider({
       setTheme,
       // 与下面 setShadeTarget 用同一个口径（OSC 11 的回答，缺失时按明暗取
       // 白/黑）——terminal 图像的不透明衬底就合成到这个颜色上。
-      terminalBackground: hexRgb(
-        detectedBackground
-          ?? (isLightThemeActive(renderedTheme) ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }),
-      ),
+      // 只在与主题明暗**一致**时才采信 OSC 11 的回答：透明背景/背景图形态
+      // 的终端会报一个跟画面对不上的颜色，那时宁可用纯白（浅色主题）或
+      // 纯黑（深色主题）——深色终端上糊一块白底最突兀。
+      terminalBackground: hexRgb(imageBackingColor(detectedBackground, renderedTheme)),
     }),
     [renderedTheme, autoBase, setTheme, detectedBackground],
   )
@@ -338,6 +338,24 @@ function hexRgb(color: { r: number; g: number; b: number }): `#${string}` {
   const part = (value: number): string =>
     Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')
   return `#${part(color.r)}${part(color.g)}${part(color.b)}`
+}
+
+/**
+ * The opaque colour terminal images composite onto: the OSC 11 answer while
+ * it agrees with the rendered palette's lightness, else pure white (light
+ * palette) / pure black (dark palette). A light terminal must never get a
+ * dark slab, and a dark terminal must never get a white one.
+ */
+function imageBackingColor(
+  detected: { r: number; g: number; b: number } | null,
+  themeName: string,
+): { r: number; g: number; b: number } {
+  const light = isLightThemeActive(themeName)
+  const fallback = light ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }
+  if (detected === null) return fallback
+  // Rec. 601 luma: > 0.5 counts as a light background.
+  const luma = (0.299 * detected.r + 0.587 * detected.g + 0.114 * detected.b) / 255
+  return (luma > 0.5) === light ? detected : fallback
 }
 
 /**
