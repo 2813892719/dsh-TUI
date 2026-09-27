@@ -556,6 +556,9 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
     expandEditor: config.expandEditor,
     smoothStreaming: config.smoothStreaming,
     statusBar: config.statusBar,
+    // 启动种子：与上面各显示偏好同款（设置服务的 boot apply 会再对一次
+    // 值，setWhaleGirl 对同值是 no-op，不会多通知）。
+    whaleGirl: config.whaleGirl,
     handle,
   })
   // Register the live Channel for the adapter Kernel. The Channel driver

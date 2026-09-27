@@ -623,9 +623,16 @@ export function Chat({
    * 这一轮不弹也**不记账**，留给下一次启动。`starPrompt` 是测试缝：传
    * `null` 显式关闭，传 actions 覆写两个按钮（不跑真 gh、不开真浏览器）。 */
   const [starModal, setStarModal] = React.useState<number | null>(null)
+  // 单发闩：只在第一个"安静的开屏视口"上武装定时器。700ms 窗口内整屏
+  // 界面打开 → cleanup 掐掉定时器且**不再重臂**（记账只发生在回调里，
+  // 所以这一档完好留给下一次启动）；整屏界面随后关闭也不追到聊天视图
+  // 上补弹——开屏求星不追人。
+  const starModalArmedRef = React.useRef(false)
   React.useEffect(() => {
+    if (starModalArmedRef.current) return
     if (starPrompt === null) return
     if (supervisorOpen || treeOpen || settingsOpen || channel.working) return
+    starModalArmedRef.current = true
     // 让开屏先画半秒：弹窗压在介绍动画之上，而不是同抢第一帧。
     const timer = setTimeout(() => {
       // 到点时回合已经开始的仍不弹（channel 是活对象，读到的是当前值）。
@@ -636,8 +643,8 @@ export function Chat({
       setStarModal(index)
     }, 700)
     return () => { clearTimeout(timer) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 启动判定只看开屏那一刻的状态
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在整屏界面开合时重判；闩保证只武装一次
+  }, [supervisorOpen, treeOpen, settingsOpen])
   /** `/star` 命令与开屏弹窗共用的一键动作：异步跑 gh，界面全程不阻塞，
    * 结果回来按四类各报一句（成功 / 没装 gh / 没登录 / 失败）。 */
   const runStarAction = React.useCallback((): void => {

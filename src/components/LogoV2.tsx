@@ -277,7 +277,7 @@ export function LogoV2({
       tickRef.current = null
       if (timer !== undefined) clearTimeout(timer)
     }
-  }, [settled, whaleIdle, showWhale, working, whaleFrozen])
+  }, [settled, whaleIdle, showWhale, working, whaleFrozen, whaleGirl])
   // Render priority: the layered planner pose owns the settled header while
   // it runs (hearts and blinks compose over the body planes). Otherwise a
   // click heart plays as whole heart frames over the intro — or over the
