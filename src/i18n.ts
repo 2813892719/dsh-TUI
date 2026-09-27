@@ -695,8 +695,22 @@ const dict = {
   // the rendered width can be measured for centering. English stays short
   // on purpose: without OSC 8 support the link degrades to the 38-column
   // URL, and lead+URL+tail has to fit an 80-column terminal without wrapping.
-  'logo-star-lead': { zh: '已陪你 {hours} 小时 · 第 {launches} 次打开 —— ', en: '{hours}h together · {launches} launches — ' },
+  'logo-star-lead': { zh: '已陪你 {{hours}} 小时 · 第 {{launches}} 次打开 —— ', en: '{{hours}}h together · {{launches}} launches — ' },
   'logo-star-tail': { zh: '顺手点个 star？', en: 'a star would be lovely' },
+  'cmd-desc-star': { zh: '给这个项目点个 star（用 gh 一键）' },
+  'star-ok': { zh: '已 star，谢谢！', en: 'Starred — thank you!' },
+  'star-no-gh': {
+    zh: '没找到 gh（GitHub CLI），装一个就能一键 star：https://cli.github.com —— 也可以直接在浏览器里打开 {{url}}',
+    en: 'gh (GitHub CLI) is not installed; install it for one-key starring: https://cli.github.com — or open {{url}} in a browser',
+  },
+  'star-not-authed': {
+    zh: 'gh 还没登录：先跑 gh auth login，再试一次 /star。也可以直接在浏览器里打开 {{url}}',
+    en: 'gh is not logged in: run gh auth login and try /star again. Or open {{url}} in a browser',
+  },
+  'star-failed': {
+    zh: '一键 star 没成功：{{detail}}（也可以直接在浏览器里打开 {{url}}）',
+    en: 'One-key star failed: {{detail}} (or open {{url}} in a browser)',
+  },
   'logo-tip-prefix': { zh: '提示：', en: 'Tip: ' },
   'logo-tip-more': { zh: '更多技巧', en: 'more tips' },
   // Upstream-drift notice (merged one-liner under the tip; copy explains

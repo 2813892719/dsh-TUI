@@ -82,6 +82,23 @@ const missing = { code: 1, stdout: '', stderr: '' }
   check('超时单独认出来（code=null）', outcome.kind === 'failed' && outcome.detail.includes('超时'), outcome.kind === 'failed' ? outcome.detail : outcome.kind)
 }
 
+// ── ⑤ 命令与文案接线（防"忘了注册命令"或"漏了某条文案"）────────────────────
+{
+  const { LOCAL_COMMANDS } = await import('../src/commands.js')
+  const star = LOCAL_COMMANDS.find(command => command.name === 'star')
+  check('/star 已注册进命令表（help 里能看到）', star !== undefined, star?.description ?? '缺失')
+  const { t } = await import('../src/i18n.js')
+  check(
+    '四条结果文案齐全，且 {url}/{detail} 占位符真的会被替换',
+    t('star-ok').length > 0 &&
+      t('star-no-gh', { url: 'URL_X' }).includes('URL_X') &&
+      t('star-not-authed', { url: 'URL_X' }).includes('URL_X') &&
+      t('star-failed', { detail: 'DETAIL_X', url: 'URL_X' }).includes('DETAIL_X') &&
+      t('star-failed', { detail: 'DETAIL_X', url: 'URL_X' }).includes('URL_X'),
+    t('star-failed', { detail: 'DETAIL_X', url: 'URL_X' }),
+  )
+}
+
 console.log(`\n一键 star：${checks - failures.length}/${checks} 通过`)
 if (failures.length > 0) {
   console.error(`失败项：${failures.join('、')}`)

@@ -2291,6 +2291,29 @@ export function Chat({
         setSettingsOpen(true)
         return true
       }
+      case 'star': {
+        // 一键 star：**只有用户主动敲 /star 才会跑**（绝不自动）。动作是异步的，
+        // 这里不 await——先返回，结果回来再用 notify 报一句，界面全程不阻塞。
+        setHelpOpen(false)
+        void import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
+          const url = `https://github.com/${STAR_REPO}`
+          const outcome = await starRepo()
+          if (outcome.kind === 'starred') {
+            channel.notify(t('star-ok'), { color: 'success' })
+            return
+          }
+          if (outcome.kind === 'no-gh') {
+            channel.notify(t('star-no-gh', { url }), { color: 'warning' })
+            return
+          }
+          if (outcome.kind === 'not-authed') {
+            channel.notify(t('star-not-authed', { url }), { color: 'warning' })
+            return
+          }
+          channel.notify(t('star-failed', { detail: outcome.detail, url }), { color: 'error' })
+        })
+        return true
+      }
       case 'config': {
         const userHome = process.env.USERPROFILE ?? ''
         const lines = [
