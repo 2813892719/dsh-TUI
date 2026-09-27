@@ -138,6 +138,13 @@ export interface Config {
    *  than the viewport or of an unsupported type keeps the fenced source.
    *  On by default; off always shows the source. */
   mermaidDiagrams?: boolean
+  /** LaTeX math (settings `dsh-tui.latexMath`): `$…$` / `\(…\)` inline and
+   *  `$$…$$` / `\[…\]` blocks in replies render as Unicode text — Greek and
+   *  operator symbols, scripts, fractions and operator limits stacked in
+   *  display blocks, matrices, cases. No TeX install or image protocol.
+   *  Unsupported, still-streaming, or too-wide formulas keep their source.
+   *  On by default; off always shows the source. */
+  latexMath?: boolean
   /** Status-footer field visibility and compact presentation preferences. */
   statusBar?: Partial<StatusBarConfig>
   /** Built-in action-shortcut overrides (`paste: 'alt+v'`), keyed by action
@@ -192,6 +199,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
   expandEditor: Schema.boolean().default(true),
   smoothStreaming: Schema.boolean().default(true),
   mermaidDiagrams: Schema.boolean().default(true),
+  latexMath: Schema.boolean().default(true),
   statusBar: Schema.object({
     compact: Schema.boolean().default(DEFAULT_STATUS_BAR.compact),
     model: Schema.boolean().default(DEFAULT_STATUS_BAR.model),
@@ -229,7 +237,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
 }), [
   'diffLayout', 'thinkingFold', 'toolBackground', 'scrollGutter', 'pageMargin',
   'foldTerminalCommand', 'promptSessionLabel', 'expandEditor', 'smoothStreaming',
-  'mermaidDiagrams', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'minimal',
+  'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'minimal',
   'lang', 'fullscreen', 'terminalImages', 'shortcuts',
 ])
 
