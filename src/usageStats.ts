@@ -24,24 +24,37 @@ export interface StarMilestone {
   readonly launches?: number
   /** 累计在线小时门槛。 */
   readonly hours?: number
+  /**
+   * 这一档配不配"弹一次窗"。只给**历史性时刻**用（`99h` 与 `999 次`）——其余档只在
+   * 开屏出那行标语 + 一条非阻塞提示，绝不拦路。弹窗一次只弹一档、只弹一次。
+   */
+  readonly modal?: boolean
 }
 
 /**
- * 求 star 的里程碑阶梯（有序）。次数档：100 / 500 / 1000 / 5000 / 10000；
- * 时长档：24 / 50 / 99 / 200 / 500 小时。两套按体感交错成一条线。
+ * 求 star 的里程碑阶梯（有序）。次数档：100 / 500 / **999** / 5000 / 10000；
+ * 时长档：**24 / 50 / 99 / 200 / 500** 小时。两套按体感交错成一条线；
+ * 其中 `99h` 与 `999 次` 是"历史性时刻"，会**弹一次窗**（可关，只在开屏）。
  */
 export const STAR_MILESTONES: readonly StarMilestone[] = [
   { hours: 24 },
   { hours: 50 },
-  { hours: 99 },
+  { hours: 99, modal: true },
   { launches: 100 },
   { hours: 200 },
   { hours: 500 },
   { launches: 500 },
-  { launches: 1000 },
+  { launches: 999, modal: true },
   { launches: 5000 },
   { launches: 10000 },
 ]
+
+/**
+ * 这一档是不是"历史性时刻"（值得弹窗）。
+ * @param index - `STAR_MILESTONES` 的下标。
+ * @returns 该档是否配弹窗（未知下标一律 false）。
+ */
+export const isHistoricMilestone = (index: number): boolean => STAR_MILESTONES[index]?.modal === true
 
 /** 本机累计用量。 */
 export interface UsageStats {

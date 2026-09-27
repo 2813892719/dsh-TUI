@@ -13,7 +13,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const { EMPTY_USAGE, STAR_MILESTONES, markStarAsked, pendingStarMilestone, readUsage, recordLaunch, writeUsage } =
+const { EMPTY_USAGE, STAR_MILESTONES, isHistoricMilestone, markStarAsked, pendingStarMilestone, readUsage, recordLaunch, writeUsage } =
   await import('../src/usageStats.js')
 
 let checks = 0
@@ -63,6 +63,24 @@ check('99h → 第 2 档', pendingStarMilestone(at({ totalMs: 99 * hour })) === 
 check('第 100 次 → 第 3 档（比 99h 高）', pendingStarMilestone(at({ launches: 100, totalMs: 99 * hour })) === 3)
 check('200h → 第 4 档', pendingStarMilestone(at({ totalMs: 200 * hour })) === 4)
 check('10000 次 → 最后一档', pendingStarMilestone(at({ launches: 10_000 })) === STAR_MILESTONES.length - 1)
+check(
+  '999 次那一档就在阶梯里（不是 1000）',
+  STAR_MILESTONES.some(milestone => milestone.launches === 999) &&
+    !STAR_MILESTONES.some(milestone => milestone.launches === 1000),
+)
+const modalIndexes = STAR_MILESTONES.map((milestone, index) => (milestone.modal === true ? index : -1)).filter(
+  index => index >= 0,
+)
+check(
+  '只有 99h 与 999 次配弹窗（其余档绝不拦路）',
+  modalIndexes.length === 2 &&
+    STAR_MILESTONES[modalIndexes[0]].hours === 99 &&
+    STAR_MILESTONES[modalIndexes[1]].launches === 999 &&
+    isHistoricMilestone(modalIndexes[0]) &&
+    isHistoricMilestone(modalIndexes[1]) &&
+    !isHistoricMilestone(0),
+  `弹窗档位下标 ${modalIndexes.join('、')}`,
+)
 check('报过第 0 档后不再报它（下一档未达 → null）', pendingStarMilestone(at({ totalMs: 30 * hour, celebrated: 1 })) === null)
 check('报过第 0 档后，跨到 50h 才报第 1 档', pendingStarMilestone(at({ totalMs: 50 * hour, celebrated: 1 })) === 1)
 check('一次跨多档只报最高那档', pendingStarMilestone(at({ totalMs: 600 * hour, launches: 9999 })) === 8)
