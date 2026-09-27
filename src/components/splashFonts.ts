@@ -21,6 +21,8 @@ import type { SplashFontId, SplashFontSetting } from '../adapter/ports/channel-d
 // 转出去：设置链（Config / channel / /settings 面板）只认这一个入口。
 export type { SplashFontId, SplashFontSetting } from '../adapter/ports/channel-display.js'
 
+import type { Rgb } from './bigfont.js'
+
 /** 透明格用 `·` 表示。 */
 export type GlyphRows = readonly string[]
 /** 字形表：字符 → 5 行。 */
@@ -47,6 +49,12 @@ export interface SplashFont {
     /** 下排左缩进：字距撑不到等宽时用它把下排居中（能等宽时为 0）。 */
     readonly bottomIndent: number
   }
+  /**
+   * 可选：这款字体自己的起止配色（不给就用主题的 `accent → activity`）。
+   * 半立体那款用它铺出左亮右暗的灰阶——字形本身已经是"亮面/暗面"两档字符，
+   * 再叠一层颜色渐变，才有金属受光的感觉。
+   */
+  readonly palette?: { readonly from: Rgb; readonly to: Rgb }
 }
 
 /** 基准款：6 列、竖笔 2 格、横笔 1 像素（保留圆角）。 */
@@ -103,12 +111,31 @@ const applyTable = (table: GlyphTable, fn: RowTransform): GlyphTable =>
 const SQUARE: RowTransform = row => [...row].map(cell => (cell === '▀' || cell === '▄' ? '█' : cell)).join('')
 /** 点阵灰度：笔画压成 `▓`、圆角压成 `▒`，做出老式点阵屏的灰度。 */
 const DOT: RowTransform = row => [...row].map(cell => (cell === '█' ? '▓' : cell === '▀' || cell === '▄' ? '▒' : cell)).join('')
-/** 半立体：每条笔画最右一列压暗成 `▓`——受光在左上、背光在右下。 */
-const BEVEL: RowTransform = row => [...row].map((cell, x) => {
-  if (!isInk(cell)) return cell
-  const rightEdge = x === row.length - 1 || !isInk(row[x + 1] ?? ' ')
-  return rightEdge ? '▓' : cell
-}).join('')
+/**
+ * 半立体：笔画朝**上/左**的那面留亮（`█`），朝**下/右**的那面压暗（`▓`），
+ * 整款再配一条左亮右暗的灰阶（`BEVEL_PALETTE`），读起来像一块被左上光打过的厚字
+ * ——opencode 那款招牌字的路子。判据只看这一格的邻居：
+ *
+ * - 上下都空 → 一格高的横线：最底那一行当底边压暗，其余当亮面；
+ * - 下方空 → 笔画底边，压暗；上方空 → 笔画顶边，留亮；
+ * - 否则看左右：右缘压暗，左缘/内部留亮。
+ *
+ * 圆角 `▀`/`▄` 一并按实心处理——这款要的是方角厚块，不是圆角。
+ */
+const BEVEL: RowTransform = (row, y, rows) => {
+  const solid = (source: string | undefined, x: number): boolean => isInk(source?.[x] ?? ' ')
+  return [...row].map((cell, x) => {
+    if (!isInk(cell)) return cell
+    const up = solid(rows[y - 1], x)
+    const down = solid(rows[y + 1], x)
+    if (!up && !down) return y === rows.length - 1 ? '▓' : '█'
+    if (!down) return '▓'
+    if (!up) return '█'
+    const left = solid(row, x - 1)
+    const right = solid(row, x + 1)
+    return right || !left ? '█' : '▓'
+  }).join('')
+}
 /** 宽体：6 列最近邻拉到 8 列（竖笔 3 格、字腔 2 格）。 */
 const WIDE: RowTransform = row => {
   const cells = [...row]
@@ -181,6 +208,9 @@ const font = (id: SplashFontId, face: FaceData): SplashFont => {
   }
 }
 
+/** 半立体的灰阶：左亮右暗——和字形的"亮面/暗面"共用同一套打光（光从左上来）。 */
+const BEVEL_PALETTE = { from: { r: 214, g: 214, b: 214 }, to: { r: 104, g: 104, b: 104 } }
+
 /**
  * 字体表：键就是 id（`Record<SplashFontId, …>` 保证不多不少，加一款字体必须先
  * 进端口的 id 联合）。**书写顺序就是"按天轮换"的取模顺序**；彩蛋词/彩蛋字体不
@@ -189,7 +219,7 @@ const font = (id: SplashFontId, face: FaceData): SplashFont => {
 const SPLASH_FONT_TABLE: Record<SplashFontId, SplashFont> = {
   bold: font('bold', { zh: '加粗（基准款）', en: 'Bold (base)', glyphs: BOLD_GLYPHS, fallback: BOLD_FALLBACK }),
   square: font('square', { zh: '方角实心', en: 'Square solid', glyphs: applyTable(BOLD_GLYPHS, SQUARE), fallback: applyRows(BOLD_FALLBACK, SQUARE) }),
-  bevel: font('bevel', { zh: '半立体', en: 'Bevel', glyphs: applyTable(BOLD_GLYPHS, BEVEL), fallback: applyRows(BOLD_FALLBACK, BEVEL) }),
+  bevel: { ...font('bevel', { zh: '半立体', en: 'Bevel', glyphs: applyTable(BOLD_GLYPHS, BEVEL), fallback: applyRows(BOLD_FALLBACK, BEVEL) }), palette: BEVEL_PALETTE },
   wide: font('wide', { zh: '宽体', en: 'Wide', glyphs: applyTable(BOLD_GLYPHS, WIDE), fallback: applyRows(BOLD_FALLBACK, WIDE) }),
   dot: font('dot', { zh: '点阵灰度', en: 'Dot matrix', glyphs: applyTable(BOLD_GLYPHS, DOT), fallback: applyRows(BOLD_FALLBACK, DOT) }),
   stencil: font('stencil', { zh: '镂空模板', en: 'Stencil', glyphs: applyTable(BOLD_GLYPHS, STENCIL), fallback: applyRows(BOLD_FALLBACK, STENCIL) }),
