@@ -60,6 +60,7 @@ import type { InjectController } from '../dsh-adapter/inject-channel.js'
 import { PromptEditorLayer, usePromptEditorOpen } from '../components/PromptEditor.js'
 import { GoalTodoPanel } from '../components/GoalTodoPanel.js'
 import { AutoRecapRow } from '../components/AutoRecapRow.js'
+import { CompactionStatusRow } from '../components/CompactionStatusRow.js'
 import { BalanceReportRow } from '../components/BalanceReportRow.js'
 import type { BalanceResult } from '../deepseekBalance.js'
 import { LoadedContextPanel } from '../components/LoadedContextPanel.js'
@@ -3789,6 +3790,18 @@ export function Chat({
         channel.cancel()
       }
       event.stopImmediatePropagation()
+    } else if (
+      key.escape
+      && !helpOpen
+      && !channel.working
+      && channel.compaction?.cancellable === true
+      && !promptControllerRef.current?.vimActive()
+    ) {
+      // Idle Esc otherwise falls through to the prompt's double-tap-clear;
+      // while a manual compaction runs, stopping it is what the status row
+      // promises (and the host closes the bracket cleanly on abort).
+      channel.cancelCompact()
+      event.stopImmediatePropagation()
     } else if (actionMatches('transcript', input, key) && !helpOpen) {
       // Leaving transcript mode (default Ctrl+O) — search was already
       // handled above. Help is modal: toggling this state behind the
@@ -3823,7 +3836,15 @@ export function Chat({
       // CLEARS a non-empty prompt (single press) and only arms the
       // double-press exit when the input is empty; ctrl+d keeps the
       // time-based double-press exit regardless.
-      if (channel.working) {
+      if (input === 'c' && !channel.working && channel.compaction?.cancellable === true) {
+        // Ctrl+C during a manual compaction stops the compaction instead of
+        // arming the double-press exit: exiting the process mid-bracket is how
+        // a session log ends up with an unmatched `compaction/start`. Ctrl+D
+        // keeps its exit meaning, and the next Ctrl+C behaves normally again.
+        channel.cancelCompact()
+        exitPendingRef.current = false
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
+      } else if (channel.working) {
         // First press while working only interrupts. If that abort is still
         // converging (cancelPending) the next press is the user insisting on
         // leaving: go straight to the exit funnel. Without this, a stuck turn
@@ -4385,8 +4406,17 @@ export function Chat({
                 totalPausedMsRef={totalPausedMsRef}
                 pauseStartTimeRef={pauseStartTimeRef}
                 thinkingStatus={thinkingStatus}
+                // An automatic pressure compaction runs INSIDE the turn, so it
+                // rides the working spinner as a badge instead of a second row
+                // (the spinner's timer is the turn's, not the compaction's).
+                suffix={channel.compaction === undefined ? undefined : t('compact-badge')}
               />
             ))}
+        {!channel.working && channel.compaction !== undefined && (
+          // Manual `/compact` runs while the session is idle: the row takes the
+          // spinner slot so the screen never looks frozen for its ~25-70s.
+          <CompactionStatusRow compaction={channel.compaction} />
+        )}
         <GoalTodoPanel
           channel={channel}
           collapsed={todoCollapsed}
