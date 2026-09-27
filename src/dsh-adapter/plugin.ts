@@ -66,6 +66,7 @@ import { getHostSettingsSections, getLocalSettingsSectionsHost, type TuiSettings
 import { compositionRoot, withHostRootCapability } from './host-access.js'
 import { render, ThemeProvider, AlternateScreen } from '../ui.js'
 import { PageMargin } from '../components/PageMargin.js'
+import { SPLASH_FONT_OPTIONS, normalizeSplashFont } from '../components/splashFonts.js'
 import instances from '../ink/instances.js'
 import { cursorMove, DISABLE_KITTY_KEYBOARD, DISABLE_MODIFY_OTHER_KEYS, DISABLE_WIN32_INPUT_MODE } from '../ink/termio/csi.js'
 import { DBP, DFE, DISABLE_MOUSE_TRACKING, EXIT_ALT_SCREEN, SHOW_CURSOR } from '../ink/termio/dec.js'
@@ -556,6 +557,9 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
     expandEditor: config.expandEditor,
     smoothStreaming: config.smoothStreaming,
     statusBar: config.statusBar,
+    // 开屏大字字体：cordis.yml 这一层的值（未设置时 undefined → 通道归一化成
+    // `daily`）；/settings 的改动由 applySplashFont 实时接上。
+    splashFont: config.splashFont,
     handle,
   })
   // Register the live Channel for the adapter Kernel. The Channel driver
@@ -690,6 +694,13 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
         // the idle-wakeup gate stays: an explicit `false` keeps the settled
         // header timer-free.
         whaleIdle: Schema.boolean().default(true),
+        // No schema default (same rule as foldTerminalCommand below): a
+        // default here would come back from scope.get()/watch() and shadow an
+        // explicit cordis.yml `splashFont` while the user layer is unset.
+        // applySplashFont resolves `?? config.splashFont` and normalizes it
+        // (undefined → daily), so cordis.yml stays decisive and junk lands on
+        // daily.
+        splashFont: Schema.string(),
         // Minimal mode: strips the header splash, emoji glyphs, and
         // decorative colors; code highlight and tool colors stay.
         minimal: Schema.boolean().default(false),
@@ -719,6 +730,9 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
       lang?: 'zh' | 'en'
       whale?: boolean
       whaleIdle?: boolean
+      /** Raw user-layer value: junk is normalized at the apply site (the
+       *  settings schema is a plain string, see applySplashFont). */
+      splashFont?: string
       minimal?: boolean
       fullscreen?: boolean
       terminalImages?: boolean
@@ -745,6 +759,12 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
     /** Apply the idle-whale-behavior setting: live-toggle the channel flag. */
     const applyWhaleIdle = (value: { whaleIdle?: boolean }): void => {
       channel.setWhaleIdle(value.whaleIdle ?? true)
+    }
+    /** 开屏大字字体（`dsh-tui.splashFont`）：`daily` 按本地日期轮换，其余 pin
+     *  住一款；设置用户层优先于 cordis.yml，非法值回落 `daily`。 */
+    const applySplashFont = (value: Pick<SettingsValue, 'splashFont'>): void => {
+      if (shadow) return
+      channel.setSplashFont(normalizeSplashFont(value.splashFont ?? config.splashFont))
     }
     const applyMinimal = (value: { minimal?: boolean }): void => {
       if (shadow) return
@@ -823,6 +843,7 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
       applyLayout(next)
       applyWhale(next)
       applyWhaleIdle(next)
+      applySplashFont(next)
       applyMinimal(next)
       applyLang(next)
       applyDisplay(next)
@@ -1392,6 +1413,22 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
           hint: 'Welcome-phase idle behaviors: after the intro the whale flutters its fins, thumps its tail, and dozes off when idle; clicking wakes a dozing whale and pops a heart. The first agent turn freezes it to the static standard frame.',
           hintDescriptions: { zh: '欢迎期闲置行为：开屏后鲸鱼娘摆鱼鳍、偶尔拍尾巴，空闲会睡着冒 Z；点击唤醒睡着的鲸鱼娘并冒爱心。开始第一个任务后定格为静态标准帧。' },
           kind: 'boolean',
+        },
+        {
+          path: ['splashFont'],
+          label: 'Splash font',
+          descriptions: { zh: '开屏大字字体' },
+          hint: 'Big-text face on the header splash. Daily rotates by local date (default); pick a face to pin that one. Applies immediately.',
+          hintDescriptions: { zh: '开屏头部的大字字面。按天轮换（默认）随本地日期换款；选某一款即固定那一款。立即生效。' },
+          kind: 'select',
+          // 选项直接由注册表推（含中英标签）：加一款字体就自动出现在面板里。
+          options: SPLASH_FONT_OPTIONS,
+          format(value: unknown): string {
+            // Unset in settings.yaml: show the effective resolution
+            // (cordis.yml → daily) instead of a blank — same rule as the
+            // `fullscreen` field.
+            return normalizeSplashFont(value ?? config.splashFont)
+          },
         },
         {
           path: ['minimal'],
