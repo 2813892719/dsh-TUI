@@ -1,29 +1,47 @@
 import React from 'react'
 import { Box, Text, useInput, useTerminalImages, useTerminalSize } from '../ui.js'
 import { getLang, subscribeLang, t } from '../i18n.js'
+import { Divider } from './design-system/Divider.js'
+import { HintLine } from './design-system/HintLine.js'
+import { ListItem } from './design-system/ListItem.js'
 import { MaidPortrait, useMaidPortrait } from './maidPortrait.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
-import { OPENING_SEQUENCES } from './whaleFrames.js'
+import { OPENING_SEQUENCES, WHALE_FRAME_INDEX } from './whaleFrames.js'
 import type { StarMilestone } from '../usageStats.js'
 
-/** Portrait + text side by side need this many columns (art slot 40 + gap 2 +
- * text 40 + card chrome 6); below that the card drops the art and stacks
- * text. The slot stays 40 wide so the raster portrait and the animated pixel
- * whale fallback (40×13) share one card width. */
-const MIN_ART_COLUMNS = 90
-/** Card height with the art (16 art rows + 2 border rows); terminals shorter
- * than this + 2 margin rows get the text-only card. */
+/** Art slot width — the pixel whale fallback is 40 columns wide, and the
+ * raster portrait fits inside the same slot so the card width never moves. */
+const ART_COLUMNS = 40
+/** Art slot height: 16 rows (confetti 3 + whale 13 in the celebration). */
+const ART_ROWS = 16
+/** Text column width: the longest zh body line is 48 columns; at 48 every
+ * copy line, button and hint stays on ONE row — no stranded `⭐` or
+ * mid-sentence breaks (the "排版不舒适" report). */
+const TEXT_COLUMNS = 48
+/** Portrait + text side by side need this many columns (art 40 + gap 2 +
+ * text 48 + card chrome 6); below that the card drops the art and stacks
+ * text at the narrower width. */
+const MIN_ART_COLUMNS = 98
+/** Card height with the art (16 art rows + border + title row); terminals
+ * shorter than this + 2 margin rows get the text-only card. */
 const MIN_ART_ROWS = 20
-/** Text column width inside the card: the longest zh body line is 48 columns
- * and wraps here; enough for every button and hint line to stay one row. */
-const TEXT_COLUMNS = 40
 /** Dwell on the standard pose before the fallback whale's intro loops. */
 const WHALE_REST_MS = 3000
+/** How long the celebration stays before the card closes itself. */
+const CELEBRATION_MS = 3400
+
+/** What a star attempt came back with (the modal renders each outcome). */
+export type StarAttempt =
+  | { readonly kind: 'starred' }
+  | { readonly kind: 'no-gh'; readonly url: string }
+  | { readonly kind: 'not-authed'; readonly url: string }
+  | { readonly kind: 'failed'; readonly detail: string; readonly url: string }
 
 /** The two things the modal can do (Chat supplies the real actions; tests
- * override them through the same seam). */
+ * override them through the same seam). `onStar` reports the outcome so the
+ * modal can celebrate a real star instead of guessing. */
 export interface StarPromptActions {
-  onStar: () => void
+  onStar: () => StarAttempt | Promise<StarAttempt>
   onOpen: () => void
 }
 
@@ -32,16 +50,20 @@ export interface StarPromptActions {
  * `999 launches`, see `usageStats.ts`). Chat mounts it over a dimmed
  * click-catcher on boot when `dueStarModal()` says the moment arrived —
  * never mid-turn, at most one milestone per boot, `Esc`/click-outside
- * closes, and unmounting hands the keyboard straight back (nothing is
- * left registered, so it cannot steal keys after closing).
+ * closes, and unmounting hands the keyboard straight back (nothing is left
+ * registered, so it cannot steal keys after closing).
  *
- * The copy is deliberately restrained and sincere: one title line naming
- * the milestone, three body lines, two actions — `gh` one-key star or open
- * the repo in a browser — with the selection cursor on the star line and a
- * low-pressure `Esc`-to-dismiss hint on the same row the buttons live in.
- * The art slot is the raster maid FIRST (`maidPortrait.tsx`); without image
- * protocols it falls back to the ANIMATED pixel whale (the classic intro
- * on a loop) — never a static placeholder.
+ * Composition follows the house design system: the milestone title sits in
+ * the card's top border, the two actions are `ListItem` rows (pointer,
+ * focus colour, hover background — the same component every picker uses),
+ * a `Divider` separates the footer, and the hint line is a `HintLine` with
+ * its bold key. The art slot shows the raster maid first, the animated
+ * pixel whale otherwise.
+ *
+ * A successful star switches the card into a short CELEBRATION instead of
+ * closing silently: confetti falls over the whale, which spouts on a loop,
+ * with a thank-you line — then the card closes itself. A failed attempt
+ * keeps the card open with the reason and the browser escape hatch.
  */
 export function StarPrompt({
   milestone,
@@ -58,33 +80,51 @@ export function StarPrompt({
   const imagesAvailable = useTerminalImages()
   const maidSource = useMaidPortrait(imagesAvailable)
   const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
-  const whaleAnimating = withArt && !(imagesAvailable && maidSource !== undefined)
-  const [whaleFrame, setWhaleFrame] = React.useState(STANDARD_FRAME_INDEX)
-  // 回落的鲸鱼要「会动」：循环经典开场（眨眼 → 喷水 → 摆尾），收尾在
-  // 标准帧上歇 3 秒再来一轮——共用 whaleFrames 的节奏表，不另造帧。
-  // 只在回落形态驱动；弹窗一关（整树卸载）定时器即清。
-  React.useEffect(() => {
-    if (!whaleAnimating) return
-    const sequence = OPENING_SEQUENCES.classic
-    let step = 0
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const tick = (): void => {
-      const current = sequence[step] ?? sequence[0]!
-      setWhaleFrame(current.frame)
-      const last = step === sequence.length - 1
-      step = (step + 1) % sequence.length
-      timer = setTimeout(tick, last ? WHALE_REST_MS : current.ms)
-      ;(timer as { unref?: () => void }).unref?.()
-    }
-    tick()
-    return () => { if (timer !== undefined) clearTimeout(timer) }
-  }, [whaleAnimating])
+  const [phase, setPhase] = React.useState<'ask' | 'working' | 'done' | 'failed'>('ask')
+  const [failure, setFailure] = React.useState('')
   const [selected, setSelected] = React.useState(0)
   // Some terminals report one Enter twice (parsed Return then raw CR); the
   // modal must not fire its action twice for one press.
   const lastEnterRef = React.useRef(0)
+  const live = React.useRef(true)
+  React.useEffect(() => () => { live.current = false }, [])
+
+  const runStar = (): void => {
+    if (phase === 'working' || phase === 'done') return
+    setPhase('working')
+    void Promise.resolve(actions.onStar()).then(
+      attempt => {
+        if (!live.current) return
+        if (attempt.kind === 'starred') {
+          setPhase('done')
+          return
+        }
+        setFailure(attempt.kind === 'failed'
+          ? t('star-failed', { detail: attempt.detail, url: attempt.url })
+          : t(attempt.kind === 'no-gh' ? 'star-no-gh' : 'star-not-authed', { url: attempt.url }))
+        setPhase('failed')
+      },
+      (error: unknown) => {
+        if (!live.current) return
+        setFailure(t('star-failed', { detail: String(error), url: '' }))
+        setPhase('failed')
+      },
+    )
+  }
+
+  // The celebration bows out on its own; a key press closes it early.
+  React.useEffect(() => {
+    if (phase !== 'done') return
+    const timer = setTimeout(onClose, CELEBRATION_MS)
+    return () => { clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在进入庆祝时起表
+  }, [phase])
 
   useInput((input, key) => {
+    if (phase === 'done') {
+      onClose()
+      return
+    }
     if (key.escape) {
       onClose()
       return
@@ -97,20 +137,23 @@ export function StarPrompt({
       const now = Date.now()
       if (now - lastEnterRef.current < 50) return
       lastEnterRef.current = now
-      activate(selected, actions)
+      if (selected === 0) runStar()
+      else actions.onOpen()
     }
   })
 
-  const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS + 8, columns - 6))
-  const cardColumns = withArt ? 88 : Math.min(columns, textColumns + 6)
-  const cardRows = withArt ? 18 : 12
+  const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS, columns - 6))
+  const cardColumns = withArt ? 96 : Math.min(columns, textColumns + 6)
+  const cardRows = withArt ? 18 : 16
   const left = Math.max(0, Math.floor((columns - cardColumns) / 2))
   const bottom = Math.max(0, Math.min(Math.floor((rows - cardRows) / 2), rows - cardRows))
+  const celebrating = phase === 'done'
 
-  const title = milestone.hours !== undefined
-    ? t('star-modal-title-hours', { hours: milestone.hours })
-    : t('star-modal-title-launches', { launches: milestone.launches ?? 0 })
-  const options = [t('star-modal-star'), t('star-modal-open')]
+  const title = celebrating
+    ? t('star-modal-thanks-title')
+    : milestone.hours !== undefined
+      ? t('star-modal-title-hours', { hours: milestone.hours })
+      : t('star-modal-title-launches', { launches: milestone.launches ?? 0 })
 
   return (
     <>
@@ -136,63 +179,243 @@ export function StarPrompt({
         left={left}
         bottom={bottom}
         width={cardColumns}
-        flexDirection="row"
-        gap={2}
-        alignItems="center"
-        justifyContent="center"
+        height={cardRows}
+        flexDirection="column"
         flexShrink={0}
         overflow="hidden"
-        borderStyle="round"
-        borderColor="inactive"
-        paddingX={2}
         backgroundColor="toolCardBackground"
         opaque
         onClick={event => { event.stopImmediatePropagation() }}
       >
-        {withArt && (
-          // 40×16 槽位：最优先真图立绘（按裁掉透明边后的实际比例适配）；
-          // 终端图像协议不可用时回落**会动的像素鲸鱼**（经典开场循环，
-          // 40×13 居中）。
-          <Box width={40} height={16} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
-            {imagesAvailable && maidSource !== undefined ? (
-              <MaidPortrait source={maidSource} maxColumns={40} maxRows={16} presentation="preview" />
+        {/* 标题 + 内容都在带边框的内盒里：absolute 卡片上直接放一行 Text
+            会被布局挤掉（实机与夹具都复现过，显式高度也救不回来），所以
+            标题作为内容列的第一行走。 */}
+        <Box
+          flexDirection="row"
+          gap={2}
+          alignItems="center"
+          justifyContent="center"
+          borderStyle="round"
+          borderColor="inactive"
+          paddingX={2}
+        >
+          {withArt && (
+            <ArtSlot
+              celebrating={celebrating}
+              phase={phase}
+              imagesAvailable={imagesAvailable}
+              maidSource={maidSource}
+            />
+          )}
+          <Box flexDirection="column" width={textColumns}>
+            <Text color="accent" bold wrap="wrap">{title}</Text>
+            <Box height={1} />
+            {celebrating ? (
+              <>
+                <Text wrap="wrap">{t('star-modal-thanks-1')}</Text>
+                <Text wrap="wrap">{t('star-modal-thanks-2')}</Text>
+                <Box height={1} />
+                <Divider width={textColumns} />
+                <Box height={1} />
+                <Text dimColor wrap="wrap">
+                  <HintLine text={t('star-modal-thanks-hint')} />
+                </Text>
+              </>
             ) : (
-              <WhaleArt frameIndex={whaleFrame} width={40} />
+              <>
+                <Text wrap="wrap">{t('star-modal-body-1')}</Text>
+                <Box height={1} />
+                <Text wrap="wrap">{t('star-modal-body-2')}</Text>
+                <Text wrap="wrap">{t('star-modal-body-3')}</Text>
+                <Box height={1} />
+                <ListItem
+                  isFocused={selected === 0}
+                  disabled={phase === 'working'}
+                  declareCursor={false}
+                  onClick={event => {
+                    event.stopImmediatePropagation()
+                    setSelected(0)
+                    runStar()
+                  }}
+                >
+                  {phase === 'working' ? t('star-modal-working') : t('star-modal-star')}
+                </ListItem>
+                <ListItem
+                  isFocused={selected === 1}
+                  declareCursor={false}
+                  onClick={event => {
+                    event.stopImmediatePropagation()
+                    setSelected(1)
+                    actions.onOpen()
+                  }}
+                >
+                  {t('star-modal-open')}
+                </ListItem>
+                {phase === 'failed' && (
+                  <>
+                    <Box height={1} />
+                    <Text color="error" wrap="wrap">{failure}</Text>
+                  </>
+                )}
+                <Box height={1} />
+                <Divider width={textColumns} />
+                <Box height={1} />
+                <Text dimColor wrap="wrap">
+                  <HintLine text={t('star-modal-hint')} />
+                </Text>
+              </>
             )}
           </Box>
-        )}
-        <Box flexDirection="column" width={textColumns}>
-          <Text color="accent" bold wrap="wrap">{title}</Text>
-          <Box height={1} />
-          <Text wrap="wrap">{t('star-modal-body-1')}</Text>
-          <Text wrap="wrap">{t('star-modal-body-2')}</Text>
-          <Text wrap="wrap">{t('star-modal-body-3')}</Text>
-          <Box height={1} />
-          {options.map((label, index) => (
-            <Box
-              key={label}
-              flexShrink={0}
-              onClick={event => {
-                event.stopImmediatePropagation()
-                setSelected(index)
-                activate(index, actions)
-              }}
-            >
-              <Text color={index === selected ? 'accent' : undefined} bold={index === selected} dimColor={index !== selected}>
-                {index === selected ? '▸ ' : '  '}{label}
-              </Text>
-            </Box>
-          ))}
-          <Box height={1} />
-          <Text dimColor wrap="wrap">{t('star-modal-hint')}</Text>
         </Box>
       </Box>
     </>
   )
 }
 
-/** Run the selected action (shared by Enter and the click path). */
-function activate(index: number, actions: StarPromptActions): void {
-  if (index === 0) actions.onStar()
-  else actions.onOpen()
+/**
+ * The card's art column: the raster maid first, the animated pixel whale
+ * otherwise; while celebrating it becomes confetti falling over a spouting
+ * whale (the "情绪价值" moment — fireworks AND the spout, in one slot).
+ */
+function ArtSlot({
+  celebrating,
+  phase,
+  imagesAvailable,
+  maidSource,
+}: {
+  celebrating: boolean
+  phase: 'ask' | 'working' | 'done' | 'failed'
+  imagesAvailable: boolean
+  maidSource: ReturnType<typeof useMaidPortrait>
+}): React.ReactNode {
+  const raster = imagesAvailable && maidSource !== undefined
+  const frame = useWhaleFrames(
+    celebrating ? 'celebrate' : raster || phase === 'working' ? 'none' : 'intro',
+  )
+  if (celebrating) {
+    return (
+      <Box width={ART_COLUMNS} height={ART_ROWS} flexShrink={0} flexDirection="column" alignItems="center" justifyContent="center">
+        <Confetti width={ART_COLUMNS} />
+        <WhaleArt frameIndex={frame} width={ART_COLUMNS} />
+      </Box>
+    )
+  }
+  if (raster) {
+    return (
+      <Box width={ART_COLUMNS} height={ART_ROWS} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
+        <MaidPortrait source={maidSource} maxColumns={ART_COLUMNS} maxRows={ART_ROWS} presentation="preview" />
+      </Box>
+    )
+  }
+  return (
+    <Box width={ART_COLUMNS} height={ART_ROWS} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
+      <WhaleArt frameIndex={frame} width={ART_COLUMNS} />
+    </Box>
+  )
+}
+
+/**
+ * Drive the art slot's frame: `intro` loops the classic opener with a rest
+ * on the standard pose, `celebrate` loops the water spout (the thank-you
+ * animation), `none` parks on the standard pose with no timer at all.
+ */
+function useWhaleFrames(mode: 'intro' | 'celebrate' | 'none'): number {
+  const [frame, setFrame] = React.useState(STANDARD_FRAME_INDEX)
+  React.useEffect(() => {
+    if (mode === 'none') {
+      setFrame(STANDARD_FRAME_INDEX)
+      return
+    }
+    const sequence = mode === 'celebrate' ? CELEBRATION_FRAMES : OPENING_SEQUENCES.classic
+    let step = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = (): void => {
+      const current = sequence[step] ?? sequence[0]!
+      setFrame(current.frame)
+      const last = step === sequence.length - 1
+      step = (step + 1) % sequence.length
+      const rest = mode === 'celebrate' ? 0 : WHALE_REST_MS
+      timer = setTimeout(tick, last ? (rest || current.ms) : current.ms)
+      ;(timer as { unref?: () => void }).unref?.()
+    }
+    tick()
+    return () => { if (timer !== undefined) clearTimeout(timer) }
+  }, [mode])
+  return frame
+}
+
+/** The spout loop: bloom up 1→6, settle, wag once, settle — then repeat. */
+const CELEBRATION_FRAMES = [
+  WHALE_FRAME_INDEX.spout1, WHALE_FRAME_INDEX.spout2, WHALE_FRAME_INDEX.spout3,
+  WHALE_FRAME_INDEX.spout4, WHALE_FRAME_INDEX.spout5, WHALE_FRAME_INDEX.spout6,
+  STANDARD_FRAME_INDEX, WHALE_FRAME_INDEX.tail1, WHALE_FRAME_INDEX.tail2,
+  WHALE_FRAME_INDEX.tail3, WHALE_FRAME_INDEX.tail4, STANDARD_FRAME_INDEX,
+].map(frame => ({ frame, ms: 140 }))
+
+/** Confetti glyphs and their colours (theme tokens, cycled). */
+const CONFETTI_GLYPHS = ['✦', '✧', '⋆', '✨', '⭐', '·'] as const
+const CONFETTI_COLORS = ['accent', 'success', 'warning', 'activity', undefined] as const
+const CONFETTI_FRAMES = 4
+const CONFETTI_ROWS = 3
+
+/**
+ * Pre-computed confetti frames (glyph + colour per cell, run-length encoded
+ * per row). Deterministic: a fixed LCG per frame means every render of the
+ * same frame paints the same sparkles, so the animation neither flickers
+ * nor re-rolls on unrelated re-renders.
+ */
+const CONFETTI: readonly (readonly (readonly { readonly text: string; readonly color: (typeof CONFETTI_COLORS)[number] }[])[])[] =
+  Array.from({ length: CONFETTI_FRAMES }, (_, frameIndex) => {
+    let seed = frameIndex * 7919 + 104729
+    const random = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x7fffffff
+    }
+    return Array.from({ length: CONFETTI_ROWS }, () => {
+      const runs: { text: string; color: (typeof CONFETTI_COLORS)[number] }[] = []
+      let current: (typeof CONFETTI_COLORS)[number] = undefined
+      let buffer = ''
+      for (let column = 0; column < ART_COLUMNS; column++) {
+        const empty = random() < 0.55
+        const glyph = empty ? ' ' : CONFETTI_GLYPHS[Math.floor(random() * CONFETTI_GLYPHS.length)]!
+        const color = empty ? undefined : CONFETTI_COLORS[Math.floor(random() * CONFETTI_COLORS.length)]
+        if (color !== current) {
+          if (buffer !== '') runs.push({ text: buffer, color: current })
+          buffer = ''
+          current = color
+        }
+        buffer += glyph
+      }
+      if (buffer !== '') runs.push({ text: buffer, color: current })
+      return runs
+    })
+  })
+
+/** One confetti band, advancing a frame every 160ms while it is mounted. */
+function Confetti({ width }: { width: number }): React.ReactNode {
+  const frame = useConfettiFrame()
+  const rows = CONFETTI[frame] ?? CONFETTI[0]!
+  return (
+    <Box flexDirection="column" flexShrink={0} width={width}>
+      {rows.map((runs, index) => (
+        <Text key={index} wrap="truncate-end">
+          {runs.map((run, runIndex) => (
+            <Text key={runIndex} color={run.color}>{run.text}</Text>
+          ))}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
+function useConfettiFrame(): number {
+  const [frame, setFrame] = React.useState(0)
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame(previous => (previous + 1) % CONFETTI_FRAMES)
+    }, 160)
+    ;(timer as { unref?: () => void }).unref?.()
+    return () => { clearInterval(timer) }
+  }, [])
+  return frame
 }

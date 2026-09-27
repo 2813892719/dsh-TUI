@@ -48,7 +48,7 @@ import { useCopyOnSelect } from '../ink/hooks/use-copy-on-select.js'
 import { useSelection } from '../ink/hooks/use-selection.js'
 import { NoSelect } from '../ink/components/NoSelect.js'
 import { LogoHeader, MessageList } from '../components/MessageList.js'
-import { StarPrompt } from '../components/StarPrompt.js'
+import { StarPrompt, type StarAttempt } from '../components/StarPrompt.js'
 import { dueStarModal, markStarAsked, STAR_MILESTONES } from '../usageStats.js'
 import { TimelineRail } from '../components/TimelineRail.js'
 import { ScrollbarGutter } from '../components/ScrollbarGutter.js'
@@ -367,7 +367,7 @@ export function Chat({
    * interactive without spawning `gh` or a browser. Production leaves it
    * undefined.
    */
-  starPrompt?: { dir?: string; onStar?: () => void; onOpen?: () => void } | null
+  starPrompt?: { dir?: string; onStar?: () => StarAttempt | Promise<StarAttempt>; onOpen?: () => void } | null
   /**
    * The composer's live controller, published every render. Exposed as a prop
    * so a regression can read the draft the composer HOLDS — the ownership
@@ -676,11 +676,19 @@ export function Chat({
     })
   }, [channel])
   const starModalActions = React.useMemo(() => ({
-    onStar: () => {
-      setStarModal(null)
+    // 弹窗自己演结果（成功→庆祝、失败→留在卡里说明原因），所以这里把
+    // 结局**回传**给它；`/star` 命令那条路仍走 runStarAction 的 notify。
+    onStar: (): StarAttempt | Promise<StarAttempt> => {
       const seam = starPrompt?.onStar
-      if (seam !== undefined) { seam(); return }
-      runStarAction()
+      if (seam !== undefined) return seam()
+      return import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
+        const url = `https://github.com/${STAR_REPO}`
+        const outcome = await starRepo()
+        if (outcome.kind === 'starred') return { kind: 'starred' as const }
+        if (outcome.kind === 'no-gh') return { kind: 'no-gh' as const, url }
+        if (outcome.kind === 'not-authed') return { kind: 'not-authed' as const, url }
+        return { kind: 'failed' as const, detail: outcome.detail, url }
+      })
     },
     onOpen: () => {
       setStarModal(null)

@@ -37,6 +37,7 @@ const [
   { LogoHeader },
   { createChannel },
   { QuestionStore },
+  { POINTER },
   { settle, settled, sleep },
 ] = await Promise.all([
   import('node:stream'),
@@ -46,6 +47,7 @@ const [
   import('../src/components/MessageList.js'),
   import('../src/dsh-adapter/channel.js'),
   import('../src/dsh-adapter/questions.js'),
+  import('../src/terminal-utils/figures.js'),
   import('./lib/term-test.mjs'),
 ])
 
@@ -265,50 +267,56 @@ async function mountChat(starPrompt: { dir: string; onStar?: () => void; onOpen?
 
 const modalShown = (text: string) => text.includes('不知不觉') && text.includes('给 dshTUI 一个 Star')
 
-// C：99h 弹一次；Enter 走 star；双击 Enter 只算一次；记账落档。
+// C：99h 弹一次；Enter 走 star → 庆祝 → 自己收场；双击 Enter 只算一次；记账落档。
 {
   const dir = join(fixtureHome, 'case-c')
   seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
   const starCalls: string[] = []
-  const chat = await mountChat({ dir, onStar: () => starCalls.push('star'), onOpen: () => starCalls.push('open') })
+  const chat = await mountChat({
+    dir,
+    onStar: () => { starCalls.push('star'); return { kind: 'starred' } },
+    onOpen: () => { starCalls.push('open') },
+  })
   check('C1 the 99h milestone opens the modal once', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
   const plain = chat.plain()
-  check('C2 title names the milestone hours', plain.includes('已经陪你 99 小时了'))
+  check('C2 title rides the card border', plain.includes('已经陪你 99 小时了') && plain.includes('╭'))
   check('C3 both actions and the Esc hint render',
     plain.includes('在浏览器中打开 GitHub') && plain.includes('Esc 以后再说'))
-  check('C4 selection cursor starts on the star line', plain.includes('▸ 给 dshTUI 一个 Star'))
+  check('C4 selection pointer starts on the star row', plain.includes(`${POINTER} 给 dshTUI 一个 Star`))
   check('C5 the modal carries the pixel whale while graphics are off', chat.stdout.frames.join('').includes(WHALE_OUTLINE))
   check('C6 the passive star line yields to the modal', !plain.includes('已陪你'))
   check('C7 the milestone is marked as asked exactly one tier up', readCelebrated(dir) === 3)
   await sleep(300) // 固定窗:pacing 弹窗画出来≠useInput 已订阅（passive effect 晚于绘制一拍），发键前等订阅就绪
 
   const mark = chat.mark()
-  // 跨 tick 的两次 Enter：若同一毫秒送达，第二次被 StarPrompt 的双发
-  // 去重挡掉；若晚一拍，弹窗已被第一次关掉、第二下落回输入框——两种
-  // 时序下动作都恰好触发一次。（同 tick 写入 "\r\r" 会被合并成一条多
-  // 字符粘贴事件，key.return 为假，什么也不触发——不拿来当用例。）
+  // 跨 tick 的两次 Enter：第一次触发 star（卡进 working，第二次 Enter
+  // 在 working/庆祝态不再触发），两种时序下动作都恰好一次。（同 tick 写入
+  // "\r\r" 会被合并成一条多字符粘贴事件，key.return 为假，不拿来当用例。）
   chat.stdin.write('\r')
   await new Promise<void>(resolve => setImmediate(resolve))
   chat.stdin.write('\r')
-  await settle(() => chat.stdout.frames.length > mark && !chat.since(mark).includes('在浏览器中打开 GitHub'))
-  check('C8 a double Enter fires the star action once (dedup guard)', starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
-  check('C9 the modal closed after the action', !chat.since(mark).includes('在浏览器中打开 GitHub'))
-  // 关闭后不得抢键：↓ + Enter 落回输入框，不再触发任何按钮。
+  check('C8 a double Enter fires the star action once', await settled(() => chat.since(mark).includes('收到，谢谢'), { timeoutMs: 5000 })
+    && starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
+  check('C9 a successful star celebrates instead of closing silently',
+    chat.since(mark).includes('收到，谢谢') && chat.since(mark).includes('点亮了 dshTUI'))
+  // 庆祝自己收场（3.4s）——收场后按键落回输入框，不再触发任何按钮。
   const mark2 = chat.mark()
+  await settle(() => !chat.since(mark2).includes('收到，谢谢'), { timeoutMs: 6000 })
+  check('C9b the celebration closes itself', !chat.since(mark2).includes('收到，谢谢'))
   chat.stdin.write('\u001b[B')
-  await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 移动选择与 Enter 必须是两条独立事件，不能合成粘贴
+  await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 与 Enter 必须是两条独立事件，不能合成粘贴
   chat.stdin.write('\r')
   await sleep(400) // 固定窗:探针 关闭后的按键不得再触发动作——"无新调用"没有可轮询锚点，只能等观察窗再断言不变
   check('C10 keys after close reach the composer, not the dead modal', starCalls.length === 1 && !chat.since(mark2).includes('在浏览器中打开 GitHub'))
   await chat.unmount()
 }
 
-// D：Esc 关闭；↓ 把 ▸ 移到第二颗按钮，Enter 走 open 动作。
+// D：Esc 关闭；↓ 把指针移到第二个动作，Enter 走 open 动作。
 {
   const dir = join(fixtureHome, 'case-d')
   seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
   const calls: string[] = []
-  const chat = await mountChat({ dir, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
+  const chat = await mountChat({ dir, onStar: () => { calls.push('star'); return { kind: 'starred' } }, onOpen: () => { calls.push('open') } })
   check('D1 the modal opens again on a fresh ledger', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
   await sleep(300) // 固定窗:pacing 同 C：画出来≠已订阅，发键前等订阅就绪
   const mark = chat.mark()
@@ -324,13 +332,13 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
 
   const dir2 = join(fixtureHome, 'case-d2')
   seedUsage(dir2, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
-  const chat2 = await mountChat({ dir: dir2, onStar: () => calls.push('star'), onOpen: () => calls.push('open') })
+  const chat2 = await mountChat({ dir: dir2, onStar: () => { calls.push('star'); return { kind: 'starred' } }, onOpen: () => { calls.push('open') } })
   check('D4 the modal opens on the second fresh ledger', await settled(() => modalShown(chat2.plain()), { timeoutMs: 5000 }))
   await sleep(300) // 固定窗:pacing 同上，发键前等 useInput 订阅就绪
   const mark2 = chat2.mark()
   chat2.stdin.write('\u001b[B')
-  await settle(() => chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
-  check('D5 ↓ moves the cursor onto the browser action', chat2.since(mark2).includes('▸ 在浏览器中打开 GitHub'))
+  await settle(() => chat2.since(mark2).includes(`${POINTER} 在浏览器中打开 GitHub`))
+  check('D5 ↓ moves the pointer onto the browser action', chat2.since(mark2).includes(`${POINTER} 在浏览器中打开 GitHub`))
   // Enter 前另起 mark：↓ 的重绘帧里本来就带着弹窗正文，累计窗口从它
   // 之后起算，"关闭"才成立（与 C9/D2 同一模式）。
   chat2.stdin.write('\r')
@@ -338,6 +346,27 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   await settle(() => chat2.stdout.frames.length > mark3)
   check('D6 Enter on the browser action fires open and closes', calls.length === 1 && calls[0] === 'open' && !chat2.since(mark3).includes('在浏览器中打开 GitHub'))
   await chat2.unmount()
+}
+
+// G：star 失败时卡片留在屏幕上说明原因，浏览器那条路仍可用。
+{
+  const dir = join(fixtureHome, 'case-g')
+  seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const chat = await mountChat({
+    dir,
+    onStar: () => ({ kind: 'failed', detail: 'boom-403', url: 'https://example.test/repo' }),
+    onOpen: () => {},
+  })
+  check('G1 the modal opens', await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }))
+  await sleep(300) // 固定窗:pacing 同 C：画出来≠已订阅，发键前等订阅就绪
+  chat.stdin.write('\r')
+  // 错误文案在 48 列里会折行，断言只用不会被折开的短片段。
+  check('G2 a failed star keeps the card open with the reason',
+    await settled(() => chat.plain().includes('没成功') && chat.plain().includes('boom-403'), { timeoutMs: 5000 }))
+  check('G3 the failure view keeps the browser escape hatch', chat.plain().includes('在浏览器中打开 GitHub'))
+  chat.stdin.write('\u001b')
+  await sleep(300) // 固定窗:pacing Esc 关闭后确认重绘
+  await chat.unmount()
 }
 
 // E：非历史档（24h）不弹窗。

@@ -310,6 +310,13 @@ const dict = {
     zh: '压缩进行中，已取消并切换会话',
     en: 'In-flight compaction cancelled for the session switch',
   },
+  // 压缩状态行（prompt 上方的 spinner 槽位）。压缩只暴露两个可观测阶段：
+  // 首块输出前是在重放上下文（无可计数），之后才有生成量。
+  'compact-phase-prefill': { zh: '读取上下文…', en: 'reading context…' },
+  'compact-esc-cancel': { zh: 'Esc 取消', en: 'Esc cancels' },
+  'compact-cancelled': { zh: '压缩已取消', en: 'Compaction cancelled' },
+  // 回合进行中的自动压缩：工作 spinner 上的后缀（只此一词，别抢行）。
+  'compact-badge': { zh: '压缩中', en: 'compacting' },
   'turn-failed': { zh: '回合出错{{detail}}', en: 'Turn error{{detail}}' },
 
   // ── dsh-adapter/promptDebug.ts（/debug-prompt 成功提示）─────────────
@@ -720,7 +727,13 @@ const dict = {
   'star-modal-body-3': { zh: '你的认可，是我们继续维护和完善这个开源项目的动力。', en: 'Your recognition is what keeps us maintaining and improving this open-source project.' },
   'star-modal-star': { zh: '给 dshTUI 一个 Star', en: 'Star dsh-TUI' },
   'star-modal-open': { zh: '在浏览器中打开 GitHub', en: 'Open GitHub in the browser' },
-  'star-modal-hint': { zh: '↑↓ 选择 · Enter 确认 · Esc 以后再说', en: '↑↓ choose · Enter confirm · Esc not now' },
+  'star-modal-working': { zh: '正在点 star…', en: 'Starring…' },
+  'star-modal-hint': { zh: '↑↓ 选择 · **Enter** 确认 · **Esc** 以后再说', en: '↑↓ choose · **Enter** confirm · **Esc** not now' },
+  // star 成功后的庆祝态（礼花 + 鲸鱼喷水），几秒后卡片自己收场。
+  'star-modal-thanks-title': { zh: '⭐ 收到，谢谢！', en: '⭐ Got it — thank you!' },
+  'star-modal-thanks-1': { zh: '你的 star 已经点亮了 dshTUI。', en: 'Your star just lit up dsh-TUI.' },
+  'star-modal-thanks-2': { zh: '我们会继续把它做好，陪你走得更远。', en: 'We will keep making it better, and keep you company further.' },
+  'star-modal-thanks-hint': { zh: '**Enter** / **Esc** 关闭', en: '**Enter** / **Esc** to close' },
   'logo-tip-prefix': { zh: '提示：', en: 'Tip: ' },
   'logo-tip-more': { zh: '更多技巧', en: 'more tips' },
   // Upstream-drift notice (merged one-liner under the tip; copy explains
