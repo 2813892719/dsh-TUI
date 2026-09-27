@@ -97,16 +97,21 @@ let lastBootedFullscreen: boolean | undefined
 let lastBootedTerminalImages: boolean | undefined
 
 /**
- * Extract the startup prompt from raw app argv. `--resume <session>` selects
- * a persisted session and must not leak its id into the conversation.
+ * Extract the startup prompt from raw app argv, excluding session selectors
+ * and Web startup flag values. `--trusted-host` consumes multiple authorities
+ * up to the next flag; none of them are prompt text (issue #882).
  */
 export function initialPromptFromCmdlineArgs(args: readonly string[] | undefined): string {
   if (args === undefined) return ''
   const promptArgs: string[] = []
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!
-    if (arg === '--resume') {
+    if (arg === '--resume' || arg === '--host' || arg === '--port') {
       if (args[i + 1] !== undefined && !args[i + 1]!.startsWith('-')) i += 1
+      continue
+    }
+    if (arg === '--trusted-host') {
+      while (args[i + 1] !== undefined && !args[i + 1]!.startsWith('-')) i += 1
       continue
     }
     if (arg.startsWith('--resume=')) continue
