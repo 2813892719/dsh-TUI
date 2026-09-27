@@ -123,6 +123,8 @@ const GROUPS = {
     ["verify-splash-eggs", ['node', '--import', 'tsx/esm', 'scripts/verify-splash-eggs.tsx']],
     // 求 star 的触发条件（累计启动次数 / 累计在线时长的里程碑阶梯、账本坏文件兜底）：
     ["verify-usage-stats", ['node', '--import', 'tsx/esm', 'scripts/verify-usage-stats.mjs']],
+    // 一键 star 的 gh 集成（探测/登录态/超时/失败分类，全用假执行器不联网）：
+    ["verify-star-action", ['node', '--import', 'tsx/esm', 'scripts/verify-star-action.mjs']],
 // settled 子代理卡片不得永久持有动画时钟（空闲帧归零回归）：
 // 曾以 120ms/卡片持续驱动 React commit，N 张相位错开合成 ~30ms
 // 均匀帧 cadence。
