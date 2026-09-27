@@ -127,6 +127,7 @@ Unrecognized keys are ignored, `Esc` does nothing, clear with `Ctrl+C`/`dd`.
 | `Shift+Tab` | cycle session mode (default → plan → full access); mounted third-party permission presets follow in registry order at the end of the cycle |
 | `Shift+↑` | message selection mode (`↑/↓` move, `Enter` expand one, `Esc` exit) |
 | `Ctrl+T` (⌘T) | open the trace scene (same as `/trace`) |
+| `Alt+S` | one-key star (same as `/star`; the splash's star line is clickable too). Remappable in `/settings`; a short "the whale girl catches the star" celebration plays on success. Replay it any time with `DSH_TUI_STAR_MODAL=1 dsh-tui`; preview the splash star line with `DSH_TUI_STAR_LINE=1 dsh-tui` (preview env vars, ledger untouched) |
 
 ### 2.6 Mouse (fullscreen mode; drag/double-click/triple-click select-and-copy)
 
@@ -409,6 +410,7 @@ An empty session shows the whale logo area at the top (scrolls away with the con
 
 - **Intro animation** (~3.4 s, three picked each launch, `/deepseek` egg re-rolls): classic / heart / sleep.
 - **Welcome idle animation** (`whaleIdle`, default on): fin, blink, tail wag, sleeps with Z after 10 s idle; **click to show a heart and wake it**.
+- **Maid portrait** (`whaleGirl`, default off): swaps the header's pixel whale for the author-drawn maid — FIRST as a **real raster** through the terminal image protocols (Kitty/Sixel); terminals without graphics support fall back to the character-art maid. **Click her** and she turns into the "happy" portrait for a few seconds, then eases back on her own; the first agent task freezes her (no more reactions).
 - After the first agent task, it freezes to a static frame (`/new` re-enters the welcome period).
 - Text column right of the whale: `✦ dsh-TUI v版本号` →
   `DEEPSEEK / HARNESS` big text (bold glyphs, both rows the same width, one blank row between) →
@@ -474,6 +476,7 @@ Common items below, full list on the /settings screen:
 | whale | pixel whale header (default on); three intro animations picked per launch (classic/heart/sleep), `/deepseek` egg re-rolls |
 | whaleIdle | whale welcome idle animation (default on): fin/tail/blink, sleeps with Z after 10 s idle; click for a heart. Freezes after the first task |
 | splashFont | big-text face on the header splash: Daily rotation (default, changes with the local date) / bold / square / bevel / wide / dot matrix / stencil / thin (classic) / slab. Picking a face pins it; picking Daily rotation restores the rotation. Applies immediately |
+| whaleGirl | maid portrait (default off): swaps the header's pixel whale for the author-drawn maid as a **real raster** (Kitty/Sixel); falls back to the pixel whale without graphics support |
 | diffLayout | Edit/Write diff layout: auto (two columns ≥110 cols) / split / unified |
 | thinkingFold | thinking block: preview (2-3 line preview + folded when settled) / full (expanded to end of turn) |
 | effortDefault | default reasoning effort: auto / off / low / high / max. Start level for new sessions (details below) |

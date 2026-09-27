@@ -32,6 +32,9 @@ export interface ChannelLaunchOptions {
   /** Big-text face (settings `dsh-tui.splashFont`); absent → `daily`, the
    *  date rotation. Junk normalizes to `daily` (see `normalizeSplashFont`). */
   splashFont?: SplashFontSetting
+  /** Maid portrait for the header splash (settings `dsh-tui.whaleGirl`;
+   * off by default). */
+  whaleGirl?: boolean
   minimal?: boolean
   contextBar?: boolean
   configuredPreset?: string
@@ -63,6 +66,7 @@ export function createInitialChannelView(
   'thinkingFold' | 'toolBackground' | 'scrollGutter' | 'pageMargin' |
   'foldTerminalCommand' | 'promptSessionLabel' | 'expandEditor' | 'smoothStreaming' |
   'statusBar' | 'whale' | 'whaleIdle' | 'splashFont' | 'minimal' | 'activityEnabled' | 'contextBarEnabled' |
+  'statusBar' | 'whale' | 'whaleIdle' | 'whaleGirl' | 'minimal' | 'activityEnabled' | 'contextBarEnabled' |
   'agentPreset' | 'goal' | 'todos' | 'loadedContext' | 'pending' | 'commandList' |
   'lastUsage' | 'tps' | 'tpsSamples' | 'contextSegments' | 'subagents' | 'backgroundJobs' | 'selection'
 > {
@@ -84,6 +88,7 @@ export function createInitialChannelView(
     promptSessionLabel: options.promptSessionLabel === true, expandEditor: options.expandEditor !== false,
     smoothStreaming: options.smoothStreaming !== false, statusBar: normalizeStatusBar(options.statusBar),
     whale: options.whale !== false, whaleIdle: options.whaleIdle !== false, splashFont: normalizeSplashFont(options.splashFont), minimal: options.minimal === true, activityEnabled: options.activity !== false,
+    whale: options.whale !== false, whaleIdle: options.whaleIdle !== false, whaleGirl: options.whaleGirl === true, minimal: options.minimal === true, activityEnabled: options.activity !== false,
     contextBarEnabled: options.contextBar !== false, agentPreset: options.agentPreset, goal: undefined,
     todos: [], loadedContext: undefined, pending: [], commandList: [], lastUsage: undefined,
     tps: undefined, tpsSamples: [], contextSegments: { system: 0, prompt: 0, assistant: 0, thinking: 0, tools: 0 },

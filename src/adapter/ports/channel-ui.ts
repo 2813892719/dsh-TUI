@@ -145,12 +145,17 @@ export interface ChannelUi {
   readonly whale: boolean
   /** Idle whale behaviors switch (settings `dsh-tui.whaleIdle`). */
   readonly whaleIdle: boolean
+  /** Swap the header's pixel whale for the static maid portrait (settings
+   * `dsh-tui.whaleGirl`; off by default). */
+  readonly whaleGirl: boolean
   /** Apply an idle-whale-behavior change (see the public Channel type). */
   setWhaleIdle(enabled: boolean): void
   /** Big-text face on the header splash (settings `dsh-tui.splashFont`):
    *  `daily` (the default) rotates by local date, any other id pins that one
    *  face — see `components/splashFonts.ts` for the registry. */
   readonly splashFont: SplashFontSetting
+  /** Apply a maid-portrait change (see the public Channel type). */
+  setWhaleGirl(enabled: boolean): void
   /** Minimal mode (settings `dsh-tui.minimal`): no header splash, no emoji
    *  glyphs, no decorative colors; code highlight and tool colors stay. */
   readonly minimal: boolean

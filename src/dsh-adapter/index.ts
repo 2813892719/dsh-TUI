@@ -66,6 +66,8 @@ export interface Config {
    *  id from `components/splashFonts.ts` (`bold`/`square`/…) pinning that one
    *  face. An unknown value falls back to `daily`. */
   splashFont?: SplashFontSetting
+  /** Swap the header's pixel whale for the static maid portrait. */
+  whaleGirl?: boolean
   /** Reduce decorative header content and colors. */
   minimal?: boolean
   /** Show the live working line derived in-process from base session events. */
@@ -189,6 +191,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
     Schema.string(),
     value => normalizeSplashFont(value),
   ),
+  whaleGirl: Schema.boolean().default(false),
   minimal: Schema.boolean().default(false),
   activity: Schema.boolean().default(true),
   activityFrames: Schema.string().required(false),
@@ -252,6 +255,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
   'diffLayout', 'thinkingFold', 'toolBackground', 'scrollGutter', 'pageMargin',
   'foldTerminalCommand', 'promptSessionLabel', 'expandEditor', 'smoothStreaming',
   'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'splashFont', 'minimal',
+  'mermaidDiagrams', 'latexMath', 'effortDefault', 'statusBar', 'whale', 'whaleIdle', 'whaleGirl', 'minimal',
   'lang', 'fullscreen', 'terminalImages', 'shortcuts',
 ])
 
