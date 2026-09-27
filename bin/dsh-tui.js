@@ -454,8 +454,9 @@ const MSG = {
       `Options:\n` +
       `  --resume [id]          Resume the last (or the given) session\n` +
       `  -c, --continue         Same as --resume\n` +
+      `  -- <prompt...>        Treat the remaining arguments as literal prompt text\n` +
       `  <path|url>             Open with the given workspace target\n\n` +
-      `Any other argument is forwarded to \`dsh --profile ${PROFILE}\`.`,
+      `Any other argument is forwarded as an app argument to \`dsh --profile ${PROFILE}\`.`,
     zh:
       `用法：dsh-tui|dst [命令] [选项] [路径|URL]\n\n` +
       `命令：\n` +
@@ -469,8 +470,9 @@ const MSG = {
       `选项：\n` +
       `  --resume [id]          恢复上次（或指定 id 的）会话\n` +
       `  -c, --continue         同 --resume\n` +
+      `  -- <提示词...>         将剩余参数作为字面提示词\n` +
       `  <路径|URL>             以指定工作区目标启动\n\n` +
-      `其余参数原样转发给 \`dsh --profile ${PROFILE}\`。`,
+      `其余参数作为应用参数转发给 \`dsh --profile ${PROFILE}\`。`,
   },
 }
 const msg = key => MSG[key][lang]
@@ -722,7 +724,11 @@ const forwardExit = child => {
 // 不从数值反推信号（spec §5.1）。
 const startDshSession = (dshArgs, profile = PROFILE, env = process.env) =>
   new Promise(resolve => {
-    const child = spawn(...cmd('dsh', ['--profile', profile, ...dshArgs]), {
+    // DSH consumes its own --. Keep the app argv behind that boundary so an
+    // app-level -- survives, and literal prompt flags cannot select a profile.
+    const argv = ['--profile', profile]
+    if (dshArgs.length > 0) argv.push('--', ...dshArgs)
+    const child = spawn(...cmd('dsh', argv), {
       stdio: 'inherit',
       env,
       ...shellOpt,
@@ -1336,6 +1342,10 @@ if (!runningInsideProfile && ownVersion !== undefined && process.env.DSH_TUI_NO_
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
+    if (a === '--') {
+      args.push(...argv.slice(i))
+      break
+    }
     if (a === '--resume' || a === '-c' || a === '--continue' || a.startsWith('--resume=')) {
       let sessionId = ''
       if (a.startsWith('--resume=')) {

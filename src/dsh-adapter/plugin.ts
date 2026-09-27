@@ -466,8 +466,11 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
   const meta = { cwd: sessionCwd }
   // Launch-time resume target: the env handoff (launchers like naive-dsh) wins;
   // `dsh --profile tui` forwards `--resume` verbatim instead, so fall back to
-  // parsing the forwarded app args (matching the standalone bin).
-  const launchSessionId = config.sessionId ?? resumeTargetFromArgv(process.argv.slice(2))
+  // the same app-argv snapshot as the initial prompt. Raw process.argv also
+  // contains the DSH launcher's own -- and is only a legacy embedder fallback.
+  const cmdline = (ctx as { cmdlineArgs?: { get?: () => readonly string[]; args?: readonly string[] } }).cmdlineArgs
+  const cmdlineArgs = cmdline?.get?.() ?? cmdline?.args
+  const launchSessionId = config.sessionId ?? resumeTargetFromArgv(cmdlineArgs ?? process.argv.slice(2))
   const { agent, handle, agentPreset, route: createdRoute } = await resolveAgent(
     ctx,
     launchSessionId,
@@ -1468,13 +1471,11 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
   }
   // Positional command-line arguments are the initial prompt (issue #53):
   // `dsh-tui "run the tests"` forwards positionals through the dsh CLI,
-  // which mounts them as ctx.cmdlineArgs. The service shape drifted across
-  // dsh-cmdline builds — `{ get() }` is the current contract, older builds
-  // exposed `{ args }` — so read both. Submit once the channel exists;
-  // delivery goes through the normal pending/inbox chain, so no special
-  // timing is needed; the parser separates startup flags from literal prompt text.
-  const cmdline = (ctx as { cmdlineArgs?: { get?: () => readonly string[]; args?: readonly string[] } }).cmdlineArgs
-  const cmdlineArgs = cmdline?.get?.() ?? cmdline?.args
+  // which mounts them as ctx.cmdlineArgs. Reuse the snapshot read for resume
+  // selection above, supporting both `{ get() }` and legacy `{ args }` hosts.
+  // Submit once the channel exists; delivery goes through the normal pending/inbox
+  // chain, so no special timing is needed. The parser separates startup flags
+  // from literal prompt text.
   const initialPrompt = initialPromptFromCmdlineArgs(cmdlineArgs)
   if (initialPrompt) submitChannel(initialPrompt)
   // Attach the stderr reporter to the live channel and flush anything a
@@ -1636,7 +1637,7 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>, 
   const openHomeOnBoot = !homeSeen
     && launchSessionId === undefined
     && requestedWorkspace === undefined
-    && initialPromptFromCmdlineArgs(process.argv.slice(2)) === ''
+    && initialPrompt === ''
   const chat = React.createElement(Chat, {
     channel,
     renderScene: createChannelSceneOutlet(() => rawChannel.pluginScene),

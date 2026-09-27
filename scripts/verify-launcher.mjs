@@ -168,7 +168,7 @@ check('no-op install: Chinese message', r.stderr.includes('仍不可读'))
 setProfileVersion(ownVersion)
 resetStubLog()
 r = runBin(['foo', 'a b'])
-check('passthrough: args forwarded after --profile', stubCalls().at(-1) === '<--profile><dsh-tui><foo><a b>')
+check('passthrough: app args forwarded after the host separator', stubCalls().at(-1) === '<--profile><dsh-tui><--><foo><a b>')
 check('passthrough: silent when aligned', r.stderr.trim() === '')
 
 // --- 2.5 profile 非零退出：保留退出码与可直接复现的命令（须在版本对齐时测，
@@ -264,7 +264,7 @@ setProfileVersion(ownVersion)
 placeProfileBin()
 resetStubLog()
 r = runBin(['foo', 'a b'], {}, { delegating: true })
-check('shim: delegates argv through to the profile copy', stubCalls().at(-1) === '<--profile><dsh-tui><foo><a b>')
+check('shim: delegates argv through to the profile copy', stubCalls().at(-1) === '<--profile><dsh-tui><--><foo><a b>')
 check('shim: silent + exit 0 when aligned', r.status === 0 && r.stderr.trim() === '')
 
 // 反向错位（profile 更旧，issue #183）必须在「瘦壳委托」路径上拦住：上面 3.5
