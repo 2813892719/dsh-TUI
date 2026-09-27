@@ -287,7 +287,6 @@ export function StarPrompt({
                 <Text dimColor wrap="wrap">
                   <HintLine text={t('star-modal-hint')} />
                 </Text>
-                <Text dimColor wrap="truncate-end">{t('star-modal-hint-2')}</Text>
               </>
             )}
           </Box>

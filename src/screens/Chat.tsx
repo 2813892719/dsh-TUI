@@ -654,27 +654,36 @@ export function Chat({
     return () => { clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在整屏界面开合时重判；闩保证只武装一次
   }, [supervisorOpen, treeOpen, settingsOpen])
-  /** `/star` 命令与开屏弹窗共用的一键动作：异步跑 gh，界面全程不阻塞，
-   * 结果回来按四类各报一句（成功 / 没装 gh / 没登录 / 失败）。 */
+  /** `/star` 命令、开屏标语的点击/`Alt+S` 共用的一键动作：异步跑 gh，界面
+   * 全程不阻塞，结果回来按四类各报一句（成功 / 没装 gh / 没登录 / 失败）。
+   * `starPrompt.onStar` 存在时走同一条测试缝（夹具因此不会真的去 star）。 */
   const runStarAction = React.useCallback((): void => {
-    void import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
-      const url = `https://github.com/${STAR_REPO}`
-      const outcome = await starRepo()
-      if (outcome.kind === 'starred') {
+    const seam = starPrompt?.onStar
+    void (seam !== undefined
+      ? Promise.resolve(seam())
+      : import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
+        const url = `https://github.com/${STAR_REPO}`
+        const outcome = await starRepo()
+        if (outcome.kind === 'starred') return { kind: 'starred' as const }
+        if (outcome.kind === 'no-gh') return { kind: 'no-gh' as const, url }
+        if (outcome.kind === 'not-authed') return { kind: 'not-authed' as const, url }
+        return { kind: 'failed' as const, detail: outcome.detail, url }
+      })).then(attempt => {
+      if (attempt.kind === 'starred') {
         channel.notify(t('star-ok'), { color: 'success' })
         return
       }
-      if (outcome.kind === 'no-gh') {
-        channel.notify(t('star-no-gh', { url }), { color: 'warning' })
+      if (attempt.kind === 'no-gh') {
+        channel.notify(t('star-no-gh', { url: attempt.url }), { color: 'warning' })
         return
       }
-      if (outcome.kind === 'not-authed') {
-        channel.notify(t('star-not-authed', { url }), { color: 'warning' })
+      if (attempt.kind === 'not-authed') {
+        channel.notify(t('star-not-authed', { url: attempt.url }), { color: 'warning' })
         return
       }
-      channel.notify(t('star-failed', { detail: outcome.detail, url }), { color: 'error' })
+      channel.notify(t('star-failed', { detail: attempt.detail, url: attempt.url }), { color: 'error' })
     })
-  }, [channel])
+  }, [channel, starPrompt])
   const starModalActions = React.useMemo(() => ({
     // 弹窗自己演结果（成功→庆祝、失败→留在卡里说明原因），所以这里把
     // 结局**回传**给它；`/star` 命令那条路仍走 runStarAction 的 notify。
@@ -3996,6 +4005,11 @@ export function Chat({
       setTodoCollapsed(previous => !previous)
       // Consume: same readline-shadowing rule as dashboard/showAll above.
       event.stopImmediatePropagation()
+    } else if (actionMatches('star', input, key)) {
+      // 一键 star（默认 Alt+S）——与 `/star`、开屏标语点击同一个动作。
+      // 消费事件：alt 组合不该再落进输入框当普通字符。
+      runStarAction()
+      event.stopImmediatePropagation()
     } else if (plainReturn && !isSticky) {
       // Enter while scrolled up returns to the bottom: the
       // affordance now exists whenever the view is off the bottom, not
@@ -4027,6 +4041,11 @@ export function Chat({
   // draws the user's `/activity` preset, so the compaction row borrows the same
   // indicator instead of answering with the classic dot.
   const activitySlot = channel.activityEnabled && !channel.minimal
+
+  // An automatic compaction runs INSIDE the turn, so it rides whichever spinner
+  // the slot shows as a badge instead of a second row (the spinner's timer is
+  // the turn's, not the compaction's).
+  const compactionBadge = channel.compaction === undefined ? undefined : t('compact-badge')
 
   // ── Interrupt lane ─────────────────────────────────────────────────────
   // The approval and ask_user_question panels park the agent until the user
@@ -4386,6 +4405,7 @@ export function Chat({
           whale={channel.whale}
           whaleIdle={channel.whaleIdle && whaleArtVisible}
           whaleGirl={channel.whaleGirl}
+          onStarClick={runStarAction}
           working={channel.working}
           // Resuming a long session skips the ~3.4s opening animation: it
           // keeps firing low-frequency React commits that compete with the
@@ -4502,8 +4522,10 @@ export function Chat({
                   // Upload = real tokens of the last request; download =
                   // the animated chars/4 estimate, matching the classic
                   // spinner's counter (the suffix used raw chars before,
-                  // inflating the reading next to a real upload number).
-                  suffix={`${lastUploadTokens > 0 ? ` · ↑ ${formatTokens(lastUploadTokens)}` : ''} · ↓ ${formatTokens(Math.round(channel.responseChars / 4))} tokens`}
+                  // inflating the reading next to a real upload number). An
+                  // automatic compaction mid-turn badges THIS line too — it is
+                  // the spinner slot whenever real activity data exists.
+                  suffix={`${lastUploadTokens > 0 ? ` · ↑ ${formatTokens(lastUploadTokens)}` : ''} · ↓ ${formatTokens(Math.round(channel.responseChars / 4))} tokens${compactionBadge === undefined ? '' : ` · ${compactionBadge}`}`}
                 />
               </Box>
             ) : (
@@ -4516,10 +4538,7 @@ export function Chat({
                 totalPausedMsRef={totalPausedMsRef}
                 pauseStartTimeRef={pauseStartTimeRef}
                 thinkingStatus={thinkingStatus}
-                // An automatic pressure compaction runs INSIDE the turn, so it
-                // rides the working spinner as a badge instead of a second row
-                // (the spinner's timer is the turn's, not the compaction's).
-                suffix={channel.compaction === undefined ? undefined : t('compact-badge')}
+                suffix={compactionBadge}
               />
             ))}
         {!channel.working && channel.compaction !== undefined && (

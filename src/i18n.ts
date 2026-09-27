@@ -703,7 +703,7 @@ const dict = {
   // on purpose: without OSC 8 support the link degrades to the 38-column
   // URL, and lead+URL+tail has to fit an 80-column terminal without wrapping.
   'logo-star-lead': { zh: '已陪你 {{hours}} 小时 · 第 {{launches}} 次打开 —— ', en: '{{hours}}h together · {{launches}} launches — ' },
-  'logo-star-tail': { zh: '顺手点个 star？', en: 'a star would be lovely' },
+  'logo-star-tail': { zh: '顺手点个 star？（点这行或 {{key}} 一键）', en: 'a star would be lovely (click here or {{key}})' },
   'cmd-desc-star': { zh: '给这个项目点个 star（用 gh 一键）' },
   'star-ok': { zh: '已 star，谢谢！', en: 'Starred — thank you!' },
   'star-no-gh': {
@@ -733,7 +733,6 @@ const dict = {
   'star-modal-open': { zh: '在浏览器中打开 GitHub', en: 'Open GitHub in the browser' },
   'star-modal-working': { zh: '正在点 star…', en: 'Starring…' },
   'star-modal-hint': { zh: '↑↓ 选择 · **Enter** 确认 · **Esc** 下次一定 (´;ω;`)', en: '↑↓ choose · **Enter** confirm · **Esc** next time (´;ω;`)' },
-  'star-modal-hint-2': { zh: '（真的不给嘛~？）', en: '(pretty please? 🥺)' },
   // star 成功后的庆祝态（礼花 + 鲸鱼喷水），几秒后卡片自己收场。
   'star-modal-thanks-title': { zh: '⭐ 收到，谢谢！', en: '⭐ Got it — thank you!' },
   'star-modal-thanks-1': { zh: '你的 star 已经点亮了 dshTUI。', en: 'Your star just lit up dsh-TUI.' },

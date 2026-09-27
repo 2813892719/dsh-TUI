@@ -400,6 +400,25 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   await chat.unmount()
 }
 
+// H：`Alt+S` 一键 star（与 `/star`、开屏标语点击同一个动作；默认键位不抢
+// 普通字母键）。
+{
+  const { actionMatches } = await import('../src/utils/keymap.js')
+  check('H1 Alt+S is bound to the star action', actionMatches('star', 's', { meta: true }) === true)
+  check('H2 a bare s is NOT the star action (the composer keeps it)',
+    actionMatches('star', 's', {}) === false && actionMatches('star', 's', { ctrl: true }) === false)
+
+  const dir = join(fixtureHome, 'case-h')
+  seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 0 })
+  const calls: string[] = []
+  const chat = await mountChat({ dir, onStar: () => { calls.push('star'); return { kind: 'starred' } } })
+  await sleep(300) // 固定窗:pacing 挂载后等 useInput 订阅就绪再发键
+  chat.stdin.write('\u001bs')
+  check('H3 Alt+S fires the one-key star action', await settled(() => calls.length === 1 && calls[0] === 'star', { timeoutMs: 4000 }),
+    `calls=${calls.join(',')}`)
+  await chat.unmount()
+}
+
 rmSync(fixtureHome, { recursive: true, force: true })
 if (failures > 0) {
   console.error(`\n${failures} of ${checks} whale-girl checks FAILED.`)

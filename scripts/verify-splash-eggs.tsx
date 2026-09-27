@@ -205,8 +205,10 @@ check(
   plain.link,
 )
 check(
-  '退化后宽度跟着变（URL 比标签长）',
-  plain.width === stringWidth(plain.lead + plain.tail) + stringWidth(REPO_URL) && plain.width > rich.width,
+  // 尾巴里现在带着"（点这行或 Alt+S 一键）"，带标签那行反而比裸 URL 长——
+  // 断言改成"宽度按退化后实际可见文本重算、且与带标签那行不同"。
+  '退化后宽度按实际可见文本重算（≠ 带标签那行）',
+  plain.width === stringWidth(plain.lead) + stringWidth(REPO_URL) && plain.width !== rich.width,
   `${plain.width} vs ${rich.width}`,
 )
 

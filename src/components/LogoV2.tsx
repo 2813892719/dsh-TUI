@@ -14,6 +14,7 @@ import { COLUMN_GAP, WHALE_BOX_WIDTH, resolveSplashLayout } from './splashLayout
 import { withTagline, pickSplashFont, splashFontById, type SplashFont } from './splashFonts.js'
 import { pickSplashEgg, splashStarLine, type SplashEgg } from './splashEggs.js'
 import { isHistoricMilestone, markStarAsked, pendingStarMilestone, recordLaunch, STAR_MILESTONES, usageSnapshot } from '../usageStats.js'
+import { effectiveComboDisplay } from '../utils/keymap.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import { BRAND, FLASH, ICE, PALE, sweep } from './shimmer.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
@@ -102,6 +103,7 @@ export function LogoV2({
   whale = true,
   whaleIdle = true,
   whaleGirl = false,
+  onStarClick,
   working = false,
   drift,
   egg,
@@ -137,6 +139,9 @@ export function LogoV2({
    * replaced with better art) takes the slot. Both forms are static, so
    * `whaleIdle` only animates the whale. */
   whaleGirl?: boolean
+  /** 求 star 标语那一行被点击时执行（一键 star，与 `/star` / `Alt+S` 同一个
+   * 动作）。不传则那一行不可点——只有它出现时才有这个交互。 */
+  onStarClick?: () => void
   /** Welcome-phase idle whale behaviors — fin flutters, tail thumps,
    * sleep after inactivity (settings `dsh-tui.whaleIdle`; on by default —
    * an explicit `false` keeps the settled header timer-free). Click-hearts
@@ -320,7 +325,7 @@ export function LogoV2({
     // 弹窗这轮没机会弹（回合中等）就留给下一次启动。
     return pending !== null && isHistoricMilestone(pending) ? null : pending
   })
-  const starLine = starMilestone === null ? null : splashStarLine({ usage: usageSnapshot() })
+  const starLine = starMilestone === null ? null : splashStarLine({ usage: usageSnapshot(), keyHint: effectiveComboDisplay('star') })
   // 显示过就把这一档记下来，下次启动不再冒出来（同档只求一次）。
   React.useEffect(() => {
     if (starMilestone !== null) markStarAsked(starMilestone)
@@ -469,7 +474,10 @@ export function LogoV2({
           </Box>
         )}
       </Box>
-      <Box marginTop={1} paddingLeft={welcomePad}>
+      {/* 求 star 那行整行可点：点一下 = 一次一键 star（与 `/star`、`Alt+S`
+          同一个动作；终端里按 Ctrl/Cmd 点 `GitHub` 那几个字才是开浏览器）。
+          普通欢迎语不可点——只有这一行在邀请用户。 */}
+      <Box marginTop={1} paddingLeft={welcomePad} {...(starLine === null || onStarClick === undefined ? {} : { onClick: onStarClick })}>
         {starLine === null ? (
           <Text>{sweep(tagline, t, taglineRGB, FLASH, 60)}</Text>
         ) : (
