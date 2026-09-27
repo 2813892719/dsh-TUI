@@ -17,45 +17,78 @@ import { loadSharp } from '../dsh-adapter/sharp.js'
  * the setting never leaves the header worse than the whale it replaces.
  */
 
-/** Asset candidates cover both layouts: `lib/types/components` (published)
- * sits one level deeper than `src/components` (repo checkout). */
-const ASSET_CANDIDATES: readonly string[] = [
-  '../../../assets/whale-girl/whale-girl.png',
-  '../../assets/whale-girl/whale-girl.png',
-].map(relative => fileURLToPath(new URL(relative, import.meta.url)))
+/** 两张立绘：`normal` 是安静版，`happy` 是「高兴鲸娘」（点击她 / star 成功
+ *  时替换）。资产候选同时覆盖两种目录深度：`lib/types/components`（发布形态）
+ *  比 `src/components`（仓库形态）深一层。 */
+const ASSET_FILES = {
+  normal: 'whale-girl.png',
+  happy: 'whale-girl-happy.png',
+} as const
 
-let loadOnce: Promise<TerminalImageSource | undefined> | undefined
+/** 一台机器上的两张立绘都解好、并补齐到**同一像素画布**上——几何完全一致，
+ *  换图时宿主是「擦旧 + 画新」一次写入，不会留残影。 */
+export interface MaidPortraits {
+  readonly normal: TerminalImageSource
+  readonly happy: TerminalImageSource
+}
+
+const assetPath = (file: string): string | undefined =>
+  [`../../../assets/whale-girl/${file}`, `../../assets/whale-girl/${file}`]
+    .map(relative => fileURLToPath(new URL(relative, import.meta.url)))
+    .find(candidate => existsSync(candidate))
+
+let loadOnce: Promise<MaidPortraits | undefined> | undefined
 
 /**
- * Decode the portrait once per process (cached; failures cache as
- * `undefined` so a broken install never retries on every render).
- * @returns RGBA source for `<Image>`, or `undefined` when unavailable.
+ * 解码两张立绘一次（进程内缓存；失败缓存成 `undefined`，坏安装不会每次
+ * 渲染都重试）。两张都裁掉透明边后**居中补到同一张透明画布**（取两者
+ * 较大的宽高）——所以它们的像素尺寸与单元格盒完全一致。
+ * @returns 两张 RGBA 源；任一张缺失/解码失败时整体 `undefined`。
  */
-export function loadMaidPortrait(): Promise<TerminalImageSource | undefined> {
+export function loadMaidPortraits(): Promise<MaidPortraits | undefined> {
   loadOnce ??= (async () => {
-    const path = ASSET_CANDIDATES.find(candidate => existsSync(candidate))
-    if (path === undefined) return undefined
     try {
       const sharp = await loadSharp()
       if (sharp === undefined) return undefined
-      const decoded = await sharp(readFileSync(path), { failOn: 'error' })
-        .toColourspace('srgb')
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true })
-      if (decoded.info.channels !== 4
-        || decoded.data.byteLength !== decoded.info.width * decoded.info.height * 4) return undefined
-      const rgba: TerminalImageSource = {
-        data: new Uint8Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
-        width: decoded.info.width,
-        height: decoded.info.height,
+      const trimmed: Record<'normal' | 'happy', TerminalImageSource> = { normal: undefined as never, happy: undefined as never }
+      for (const variant of ['normal', 'happy'] as const) {
+        const path = assetPath(ASSET_FILES[variant])
+        if (path === undefined) return undefined
+        const decoded = await sharp(readFileSync(path), { failOn: 'error' })
+          .toColourspace('srgb')
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true })
+        if (decoded.info.channels !== 4
+          || decoded.data.byteLength !== decoded.info.width * decoded.info.height * 4) return undefined
+        const rgba: TerminalImageSource = {
+          data: new Uint8Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
+          width: decoded.info.width,
+          height: decoded.info.height,
+        }
+        trimmed[variant] = trimTransparent(rgba)
       }
-      return trimTransparent(rgba)
+      const width = Math.max(trimmed.normal.width, trimmed.happy.width)
+      const height = Math.max(trimmed.normal.height, trimmed.happy.height)
+      return { normal: centerOnCanvas(trimmed.normal, width, height), happy: centerOnCanvas(trimmed.happy, width, height) }
     } catch {
       return undefined
     }
   })()
   return loadOnce
+}
+
+/** 把一张已裁边的图居中放进 `width × height` 的透明画布（几何对齐用）。 */
+function centerOnCanvas(source: TerminalImageSource, width: number, height: number): TerminalImageSource {
+  if (source.width === width && source.height === height) return source
+  const data = new Uint8Array(width * height * 4)
+  const left = Math.floor((width - source.width) / 2)
+  const top = Math.floor((height - source.height) / 2)
+  for (let y = 0; y < source.height; y++) {
+    const from = y * source.width * 4
+    data.set(source.data.subarray(from, from + source.width * 4), ((top + y) * width + left) * 4)
+  }
+  return { data, width, height }
 }
 
 /**
@@ -99,22 +132,21 @@ function trimTransparent(source: TerminalImageSource, pad = 4): TerminalImageSou
 }
 
 /**
- * The decoded portrait, once the terminal's image support is confirmed.
- * @param enabled - graphics availability (`useTerminalImages()`); the decode
- * never starts otherwise.
- * @returns the RGBA source, or `undefined` while pending/unavailable.
+ * 两张立绘，终端图像能力确认后解码（一次把两张都备好，点击换图不等待）。
+ * @param enabled - `useTerminalImages()` 的结果；为假时根本不解码。
+ * @returns 两张 RGBA 源；未就绪/不可用时为 `undefined`。
  */
-export function useMaidPortrait(enabled: boolean): TerminalImageSource | undefined {
-  const [source, setSource] = React.useState<TerminalImageSource | undefined>(undefined)
+export function useMaidPortraits(enabled: boolean): MaidPortraits | undefined {
+  const [sources, setSources] = React.useState<MaidPortraits | undefined>(undefined)
   React.useEffect(() => {
     if (!enabled) return
     let live = true
-    void loadMaidPortrait().then(next => {
-      if (live && next !== undefined) setSource(next)
+    void loadMaidPortraits().then(next => {
+      if (live && next !== undefined) setSources(next)
     })
     return () => { live = false }
   }, [enabled])
-  return enabled ? source : undefined
+  return enabled ? sources : undefined
 }
 
 /** Fallback aspect before the source lands (square canvas). */

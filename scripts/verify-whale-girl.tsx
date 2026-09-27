@@ -182,15 +182,18 @@ async function renderHeader(props: Record<string, unknown>, expect?: (plain: str
   check('B5 whale-only tier keeps the ladder contract in maid mode',
     whaleOnly.raw.includes(MAID_HAIR) && !whaleOnly.plain.includes('dsh-TUI') && !whaleOnly.plain.includes('whale-model-probe'))
 
-  // 真图数据面：资产可解出 RGBA（sharp 缺席时显式跳过，不判失败——
-  // sharp 本就是可选依赖，缺它时 UI 的回落路径已由 B1 覆盖）。
-  const { loadMaidPortrait } = await import('../src/components/maidPortrait.js')
-  const portrait = await loadMaidPortrait()
-  if (portrait === undefined) console.log('  - B6 skipped: maid asset or sharp unavailable')
-  else check('B6 the shipped portrait decodes to RGBA and trims its transparent margins',
-    portrait.width > 0 && portrait.height > 0
-    && portrait.data.byteLength === portrait.width * portrait.height * 4
-    && (portrait.width < 464 || portrait.height < 464))
+  // 真图数据面：两张立绘都解出 RGBA、裁掉透明边，并且**共用同一张画布**
+  //（点她换「高兴鲸娘」、庆祝态换图都靠这个几何一致做干净擦除+重画）。
+  const { loadMaidPortraits } = await import('../src/components/maidPortrait.js')
+  const portraits = await loadMaidPortraits()
+  if (portraits === undefined) console.log('  - B6 skipped: maid asset or sharp unavailable')
+  else check('B6 both portraits decode to the SAME canvas geometry (clean swap)',
+    portraits.normal.width === portraits.happy.width
+    && portraits.normal.height === portraits.happy.height
+    && portraits.normal.width > 0 && portraits.normal.height > 0
+    && (portraits.normal.width < 472 || portraits.normal.height < 496)
+    && portraits.normal.data.byteLength === portraits.normal.width * portraits.normal.height * 4
+    && portraits.happy.data.byteLength === portraits.happy.width * portraits.happy.height * 4)
 }
 
 // ── C–F. 弹窗（挂真实 Chat） ────────────────────────────────────────────────

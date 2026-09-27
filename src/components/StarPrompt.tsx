@@ -4,10 +4,11 @@ import { getLang, subscribeLang, t } from '../i18n.js'
 import { Divider } from './design-system/Divider.js'
 import { HintLine } from './design-system/HintLine.js'
 import { ListItem } from './design-system/ListItem.js'
-import { MaidPortrait, useMaidPortrait } from './maidPortrait.js'
+import { MaidPortrait, useMaidPortraits } from './maidPortrait.js'
 import { useTerminalBackground } from './design-system/ThemeProvider.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
 import { OPENING_SEQUENCES, WHALE_FRAME_INDEX } from './whaleFrames.js'
+import type { TerminalImageSource } from '../ink/terminal-image.js'
 import type { StarMilestone } from '../usageStats.js'
 
 /** Art slot width — the pixel whale fallback is 40 columns wide, and the
@@ -79,7 +80,8 @@ export function StarPrompt({
   React.useSyncExternalStore(subscribeLang, getLang)
   const { columns, rows } = useTerminalSize()
   const imagesAvailable = useTerminalImages()
-  const maidSource = useMaidPortrait(imagesAvailable)
+  const portraits = useMaidPortraits(imagesAvailable)
+  const maidSource = portraits?.normal
   // 卡片底色用**终端真底色**（OSC 11）而不是主题的卡片色：后者是一整块
   // 与终端背景无关的实色板，压在带背景图的终端上很僵硬；用真底色时卡片
   // 与终端同色、只靠边框和暗化的背景区分层次，同时它也是真图立绘的不透明
@@ -215,6 +217,7 @@ export function StarPrompt({
               phase={phase}
               imagesAvailable={imagesAvailable}
               maidSource={maidSource}
+              maidHappy={portraits?.happy}
               background={terminalBackground}
             />
           )}
@@ -304,31 +307,49 @@ export function StarPrompt({
 
 /**
  * The card's art column: the raster maid first, the animated pixel whale
- * otherwise; while celebrating it becomes confetti falling over a spouting
- * whale (the "情绪价值" moment — fireworks AND the spout, in one slot).
+ * otherwise. While celebrating it shows the **happy maid** (raster→raster in
+ * the same pixel canvas, so the swap is a clean erase+draw) under the star
+ * field; without image protocols the whale spouts instead — character
+ * blocks never take this slot.
  */
 function ArtSlot({
   celebrating,
   phase,
   imagesAvailable,
   maidSource,
+  maidHappy,
   background,
 }: {
   celebrating: boolean
   phase: 'ask' | 'working' | 'done' | 'failed'
   imagesAvailable: boolean
-  maidSource: ReturnType<typeof useMaidPortrait>
+  maidSource: TerminalImageSource | undefined
+  maidHappy: TerminalImageSource | undefined
   background: `#${string}`
 }): React.ReactNode {
   const raster = imagesAvailable && maidSource !== undefined
   const frame = useWhaleFrames(
-    celebrating ? 'celebrate' : raster || phase === 'working' ? 'none' : 'intro',
+    celebrating && !raster ? 'celebrate' : raster || phase === 'working' ? 'none' : 'intro',
   )
+  if (celebrating && raster) {
+    return (
+      <Box
+        width={ART_COLUMNS}
+        height={ART_ROWS}
+        flexShrink={0}
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        backgroundColor={background}
+      >
+        <Confetti width={ART_COLUMNS} />
+        <MaidPortrait source={maidHappy ?? maidSource} maxColumns={ART_COLUMNS} maxRows={ART_ROWS - CONFETTI_ROWS} presentation="preview" />
+      </Box>
+    )
+  }
   if (celebrating) {
     return (
-      // `opaque` + 显式底色：庆祝态把艺术槽整块盖住重画。真图女仆娘是
-      // Sixel 光栅，像素会活过单元格写入——不声明遮挡时换画会在槽位里
-      // 留下一块旧图的残影（实机截图上那圈浅色底）。
+      // `opaque` + 显式底色：无图形协议时用字符画鲸鱼庆祝，整块盖住重画。
       <Box
         width={ART_COLUMNS}
         height={ART_ROWS}

@@ -19,7 +19,7 @@ import { stringWidth } from '../ink/stringWidth.js'
 import { BRAND, FLASH, ICE, PALE, sweep } from './shimmer.js'
 import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
 import { WhaleGirlArt } from './WhaleGirl.js'
-import { MAID_BOX_CENTER, MaidPortrait, useMaidPortrait } from './maidPortrait.js'
+import { MAID_BOX_CENTER, MaidPortrait, useMaidPortraits } from './maidPortrait.js'
 import { OPENING_SEQUENCES, pickOpeningSequence, WHALE_FRAME_INDEX, type OpeningStep, type WhaleIntroId } from './whaleFrames.js'
 import { RESTING_POSE, type WhaleLayerPose } from './whaleLayers.js'
 import {
@@ -58,6 +58,9 @@ const VERSION = (() => {
  * centered under the art too.
  */
 const WHALE_CENTER = 18.5
+
+/** 「高兴鲸娘」停留时长（点她之后自动回安静版）。 */
+const MAID_HAPPY_MS = 4000
 
 /** `max` → `Max` (effort levels arrive lower-case from the adapter). */
 function capitalize(text: string): string {
@@ -244,8 +247,26 @@ export function LogoV2({
   // 两种形态都是静态立绘：闲置动画与点击爱心仍是鲸鱼专属。
   // `maidImageActive` 只在「真图画出来了」时为真。
   const imagesAvailable = useTerminalImages(whaleGirl)
-  const maidSource = useMaidPortrait(whaleGirl && imagesAvailable)
+  const portraits = useMaidPortraits(whaleGirl && imagesAvailable)
+  const maidSource = portraits?.normal
   const maidImageActive = whaleGirl && imagesAvailable && maidSource !== undefined
+  // 点一下她 → 换成「高兴鲸娘」几秒（自动回安静版；第一个任务后定格、
+  // 不再响应，与鲸鱼的规则一致）。定时器在卸载/重挂时清掉。
+  const [maidHappy, setMaidHappy] = React.useState(false)
+  const maidHappyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reactMaid = React.useCallback((): void => {
+    setMaidHappy(true)
+    if (maidHappyTimerRef.current !== null) clearTimeout(maidHappyTimerRef.current)
+    const timer = setTimeout(() => {
+      maidHappyTimerRef.current = null
+      setMaidHappy(false)
+    }, MAID_HAPPY_MS)
+    ;(timer as { unref?: () => void }).unref?.()
+    maidHappyTimerRef.current = timer
+  }, [])
+  React.useEffect(() => () => {
+    if (maidHappyTimerRef.current !== null) clearTimeout(maidHappyTimerRef.current)
+  }, [])
 
   // Welcome-phase idle behaviors (settings `dsh-tui.whaleIdle`): fin
   // flutters, tail thumps and blinks while idle, and a sleep-Z loop after
@@ -373,9 +394,15 @@ export function LogoV2({
               // clicks do nothing. Settled: the layered planner consumes the
               // click on its next tick — run that tick immediately so the
               // heart shows instantly instead of after the current delay.
-              // Intro: the whole-frame heart pass above. The maid (raster
-              // or character art) is static — clicks do nothing there.
-              if (whaleFrozen || whaleGirl) return
+              // Intro: the whole-frame heart pass above. The maid (raster)
+              // reacts with the happy portrait instead of hearts; character-
+              // art fallback stays static.
+              if (whaleFrozen) return
+              if (maidImageActive) {
+                reactMaid()
+                return
+              }
+              if (whaleGirl) return
               if (settled && whaleIdle) {
                 pendingHeartRef.current = true
                 tickRef.current?.()
@@ -402,7 +429,12 @@ export function LogoV2({
                 backgroundColor={terminalBackground}
               >
                 {maidImageActive ? (
-                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={textColumnRows} presentation="transcript" />
+                  <MaidPortrait
+                    source={maidHappy ? (portraits?.happy ?? maidSource) : maidSource}
+                    maxColumns={WHALE_BOX_WIDTH}
+                    maxRows={textColumnRows}
+                    presentation="transcript"
+                  />
                 ) : (
                   <WhaleGirlArt width={WHALE_BOX_WIDTH} />
                 )}
