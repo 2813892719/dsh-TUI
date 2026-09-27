@@ -307,22 +307,46 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   // 跨 tick 的两次 Enter：第一次触发 star（卡进 working，第二次 Enter
   // 在 working/庆祝态不再触发），两种时序下动作都恰好一次。（同 tick 写入
   // "\r\r" 会被合并成一条多字符粘贴事件，key.return 为假，不拿来当用例。）
+  // 注意这里**只断言"恰好一次"**：第二次 Enter 若正好落在 phase=done 之后，
+  // 会当场关窗，庆祝那一帧有没有画出来是竞态——庆祝本身由 C9 在"只按一次"
+  // 的独立挂载上断言（下面的 case-c-celebrate）。
   chat.stdin.write('\r')
   await new Promise<void>(resolve => setImmediate(resolve))
   chat.stdin.write('\r')
-  check('C8 a double Enter fires the star action once', await settled(() => chat.since(mark).includes('收到 Star'), { timeoutMs: 5000 })
-    && starCalls.length === 1 && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
-  check('C9 a successful star celebrates instead of closing silently',
-    chat.since(mark).includes('收到 Star') && chat.since(mark).includes('接住了一颗小星星'))
-  // 庆祝自己收场（约 4.2s）——收场后按键落回输入框，不再触发任何按钮。
+  check('C8 a double Enter fires the star action once', await settled(() => starCalls.length === 1, { timeoutMs: 5000 })
+    && starCalls[0] === 'star', `calls=${starCalls.join(',')}`)
+  // 弹窗已经收场（第二次 Enter 关的），此后按键落回输入框、不再触发任何动作。
   const mark2 = chat.mark()
-  await settle(() => !chat.since(mark2).includes('收到 Star'), { timeoutMs: 8000 })
-  check('C9b the celebration closes itself', !chat.since(mark2).includes('收到 Star'))
   chat.stdin.write('\u001b[B')
   await sleep(250) // 固定窗:pacing 按键步间节奏：↓ 与 Enter 必须是两条独立事件，不能合成粘贴
   chat.stdin.write('\r')
   await sleep(400) // 固定窗:探针 关闭后的按键不得再触发动作——"无新调用"没有可轮询锚点，只能等观察窗再断言不变
-  check('C10 keys after close reach the composer, not the dead modal', starCalls.length === 1 && !chat.since(mark2).includes('在浏览器中打开 GitHub'))
+  check('C9 keys after close reach the composer, not the dead modal', starCalls.length === 1 && !chat.since(mark2).includes('在浏览器中打开 GitHub'))
+  await chat.unmount()
+}
+
+// C9：只按**一次** Enter —— 庆祝要真的画出来，并自己收场。
+// （独立挂载：双 Enter 的那个用例里，第二次 Enter 可能正好落在庆祝开始之后、
+//  把弹窗当场关掉，庆祝那一帧画没画出来是竞态，不适合下断言。）
+{
+  const dir = join(fixtureHome, 'case-c-celebrate')
+  seedUsage(dir, { launches: 1, totalMs: 99 * HOUR_MS + 60_000, celebrated: 2 })
+  const calls: string[] = []
+  const chat = await mountChat({
+    dir,
+    onStar: () => { calls.push('star'); return { kind: 'starred' } },
+  })
+  await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 })
+  await sleep(300) // 固定窗:pacing 等 useInput 订阅就绪再发键
+  const mark = chat.mark()
+  chat.stdin.write('\r')
+  check('C10 a successful star celebrates instead of closing silently',
+    await settled(() => chat.since(mark).includes('收到 Star') && chat.since(mark).includes('接住了一颗小星星'), { timeoutMs: 5000 })
+    && calls.length === 1,
+    `calls=${calls.join(',')}`)
+  const mark2 = chat.mark()
+  await settle(() => !chat.since(mark2).includes('收到 Star'), { timeoutMs: 9000 })
+  check('C11 the celebration closes itself', !chat.since(mark2).includes('收到 Star'))
   await chat.unmount()
 }
 
@@ -437,6 +461,26 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   check('I1 a successful one-key star (/star shares this path) opens the celebration',
     await settled(() => calls.length === 1 && chat.plain().includes('收到 Star'), { timeoutMs: 5000 }))
   await chat.unmount()
+}
+
+// J：本机没法一键（没装 gh / 没登录）→ **自动**打开仓库页兜底。
+{
+  for (const kind of ['no-gh', 'not-authed'] as const) {
+    const dir = join(fixtureHome, `case-j-${kind}`)
+    seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 1 })
+    const opened: string[] = []
+    const chat = await mountChat({
+      dir,
+      onStar: () => ({ kind, url: 'https://x.test/repo' }),
+      onOpen: () => { opened.push('open') },
+    })
+    await sleep(400) // 固定窗:pacing 等挂载与键盘订阅就绪
+    chat.stdin.write('\u001bs')
+    check(`J ${kind}: the browser opens by itself (no extra keystroke)`,
+      await settled(() => opened.length === 1 && opened[0] === 'open', { timeoutMs: 4000 }),
+      `opened=${opened.join(',')}`)
+    await chat.unmount()
+  }
 }
 
 rmSync(fixtureHome, { recursive: true, force: true })

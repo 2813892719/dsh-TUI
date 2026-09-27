@@ -711,12 +711,12 @@ const dict = {
   'cmd-desc-star': { zh: '给这个项目点个 star（用 gh 一键）' },
   'star-ok': { zh: '已 star，谢谢！', en: 'Starred — thank you!' },
   'star-no-gh': {
-    zh: '没找到 gh（GitHub CLI），装一个就能一键 star：https://cli.github.com —— 也可以直接在浏览器里打开 {{url}}',
-    en: 'gh (GitHub CLI) is not installed; install it for one-key starring: https://cli.github.com — or open {{url}} in a browser',
+    zh: '没找到 gh（GitHub CLI），已经替你在浏览器里打开仓库页：{{url}}。装一个 gh 就能一键 star：https://cli.github.com',
+    en: 'gh (GitHub CLI) is not installed, so I opened the repo page in your browser: {{url}}. Install gh for one-key starring: https://cli.github.com',
   },
   'star-not-authed': {
-    zh: 'gh 还没登录：先跑 gh auth login，再试一次 /star。也可以直接在浏览器里打开 {{url}}',
-    en: 'gh is not logged in: run gh auth login and try /star again. Or open {{url}} in a browser',
+    zh: 'gh 还没登录，已经替你在浏览器里打开仓库页：{{url}}。想一键 star 就先跑 gh auth login',
+    en: 'gh is not logged in, so I opened the repo page in your browser: {{url}}. Run gh auth login for one-key starring',
   },
   'star-failed': {
     zh: '一键 star 没成功：{{detail}}（也可以直接在浏览器里打开 {{url}}）',

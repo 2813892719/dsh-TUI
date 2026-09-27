@@ -659,6 +659,14 @@ export function Chat({
   /** `/star` 命令、开屏标语的点击/`Alt+S` 共用的一键动作：异步跑 gh，界面
    * 全程不阻塞，结果回来按四类各报一句（成功 / 没装 gh / 没登录 / 失败）。
    * `starPrompt.onStar` 存在时走同一条测试缝（夹具因此不会真的去 star）。 */
+  /** 打开仓库页（走 `starPrompt.onOpen` 测试缝——夹具里不会真的拉起浏览器）。 */
+  const openStarPage = React.useCallback((): void => {
+    const seam = starPrompt?.onOpen
+    if (seam !== undefined) { seam(); return }
+    void import('../starAction.js').then(({ STAR_REPO }) => {
+      openExternal(`https://github.com/${STAR_REPO}`)
+    })
+  }, [starPrompt])
   const runStarAction = React.useCallback((): void => {
     const seam = starPrompt?.onStar
     void (seam !== undefined
@@ -686,35 +694,41 @@ export function Chat({
         return
       }
       if (attempt.kind === 'no-gh') {
+        // 本机没法一键（没装 gh / 没登录）→ **自动**打开仓库页让用户自己点，
+        // 通知里说明原因（浏览器没拉起来时 URL 也还在文案里）。
+        openStarPage()
         channel.notify(t('star-no-gh', { url: attempt.url }), { color: 'warning' })
         return
       }
       if (attempt.kind === 'not-authed') {
+        openStarPage()
         channel.notify(t('star-not-authed', { url: attempt.url }), { color: 'warning' })
         return
       }
       channel.notify(t('star-failed', { detail: attempt.detail, url: attempt.url }), { color: 'error' })
     })
-  }, [channel, starPrompt])
+  }, [channel, starPrompt, openStarPage, supervisorOpen, treeOpen, settingsOpen])
   const starModalActions = React.useMemo(() => ({
     // 弹窗自己演结果（成功→庆祝、失败→留在卡里说明原因），所以这里把
     // 结局**回传**给它；`/star` 命令那条路仍走 runStarAction 的 notify。
     onStar: (): StarAttempt | Promise<StarAttempt> => {
       const seam = starPrompt?.onStar
-      // 成功即把开屏彩蛋切成「捡到星星」版。注意**不要**给返回值再包一层
-      // `.then()`——多一个微任务会让弹窗的"庆祝那一帧"被紧随其后的
-      // Enter 关窗批掉（夹具 C8/C9 实测）。这里只挂副作用、原样返回。
-      const markStarred = (attempt: StarAttempt): StarAttempt => {
+      // 成功把开屏彩蛋切成「捡到星星」版；gh 缺失/未登录**自动**打开仓库页
+      // （与一键路径同一套兜底）。注意**不要**给返回值再包一层 `.then()`——
+      // 多一个微任务会让弹窗"庆祝那一帧"被紧随其后的 Enter 关窗批掉
+      //（夹具 C8/C9 实测）。这里只挂副作用、原样返回。
+      const afterAttempt = (attempt: StarAttempt): StarAttempt => {
         if (attempt.kind === 'starred') setStarred(true)
+        else if (attempt.kind === 'no-gh' || attempt.kind === 'not-authed') openStarPage()
         return attempt
       }
       if (seam !== undefined) {
         const result = seam()
         if (result instanceof Promise) {
-          void result.then(markStarred)
+          void result.then(afterAttempt)
           return result
         }
-        return markStarred(result)
+        return afterAttempt(result)
       }
       const run = import('../starAction.js').then(async ({ starRepo, STAR_REPO }) => {
         const url = `https://github.com/${STAR_REPO}`
@@ -724,18 +738,14 @@ export function Chat({
         if (outcome.kind === 'not-authed') return { kind: 'not-authed' as const, url }
         return { kind: 'failed' as const, detail: outcome.detail, url }
       })
-      void run.then(markStarred)
+      void run.then(afterAttempt)
       return run
     },
     onOpen: () => {
       setStarModal(null)
-      const seam = starPrompt?.onOpen
-      if (seam !== undefined) { seam(); return }
-      void import('../starAction.js').then(({ STAR_REPO }) => {
-        openExternal(`https://github.com/${STAR_REPO}`)
-      })
+      openStarPage()
     },
-  }), [runStarAction, starPrompt])
+  }), [starPrompt, openStarPage])
   /** 弹窗关闭回调：稳定引用（见渲染处的注释）。 */
   const closeStarModal = React.useCallback((): void => { setStarModal(null) }, [])
   const [workspaceTargets, setWorkspaceTargets] = React.useState<readonly TuiWorkspaceTarget[]>([])
