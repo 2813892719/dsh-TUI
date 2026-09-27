@@ -219,6 +219,8 @@ export function LogoV2({
     }
   }, [heartSeq, heartKey, settled, whaleIdle, whaleFrozen])
 
+  /** 预览缝：`DSH_TUI_STAR_LINE=1` 时开屏就显示求 star 标语行（不记账）。 */
+  const starLinePreview = process.env.DSH_TUI_STAR_LINE === '1'
   const [themeName] = useTheme()
   /** 终端真底色（Sixel 不透明衬底；见渲染处的注释）。 */
   const terminalBackground = useTerminalBackground()
@@ -335,9 +337,11 @@ export function LogoV2({
   const tagline = tr('logo-tagline')
   // 求 star 改由**本机用量里程碑**触发（累计启动次数 / 累计在线时长），不再每次随机：
   // 跨档时只报最高那一档、每档只报一次（`usageStats` 记账）。`starChance` 退化成测试缝
-  // ——0 关掉、非 0 强开（强开时用最高那档的文案）。
+  // ——0 关掉、非 0 强开（强开时用最高那档的文案）。`DSH_TUI_STAR_LINE=1`
+  // 是给人看效果的预览缝：强开标语行且**不记账**（生产不设这个变量）。
   const [starMilestone] = React.useState<number | null>(() => {
     const usage = recordLaunch()
+    if (starLinePreview) return STAR_MILESTONES.length - 1
     if (starChance === 0) return null
     if (starChance !== undefined) return STAR_MILESTONES.length - 1
     const pending = pendingStarMilestone(usage)
@@ -347,9 +351,10 @@ export function LogoV2({
     return pending !== null && isHistoricMilestone(pending) ? null : pending
   })
   const starLine = starMilestone === null ? null : splashStarLine({ usage: usageSnapshot(), keyHint: effectiveComboDisplay('star') })
-  // 显示过就把这一档记下来，下次启动不再冒出来（同档只求一次）。
+  // 显示过就把这一档记下来，下次启动不再冒出来（同档只求一次）。预览缝
+  // （`DSH_TUI_STAR_LINE=1`）不记账——那是给人看效果的，不该消耗档位。
   React.useEffect(() => {
-    if (starMilestone !== null) markStarAsked(starMilestone)
+    if (starMilestone !== null && !starLinePreview) markStarAsked(starMilestone)
   }, [starMilestone])
   // One random tip per mount: the settled header must not re-roll on every
   // repaint (language switch, terminal resize), or the line would flicker.
