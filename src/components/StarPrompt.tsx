@@ -2,7 +2,8 @@ import React from 'react'
 import { Box, Text, useInput, useTerminalImages, useTerminalSize } from '../ui.js'
 import { getLang, subscribeLang, t } from '../i18n.js'
 import { MaidPortrait, useMaidPortrait } from './maidPortrait.js'
-import { WhaleArt } from './Whale.js'
+import { STANDARD_FRAME_INDEX, WhaleArt } from './Whale.js'
+import { OPENING_SEQUENCES } from './whaleFrames.js'
 import type { StarMilestone } from '../usageStats.js'
 
 /** Portrait + text side by side need this many columns (art slot 40 + gap 2 +
@@ -16,6 +17,8 @@ const MIN_ART_ROWS = 19
 /** Text column width inside the card: the longest zh body line is 48 columns
  * and wraps here; enough for every button and hint line to stay one row. */
 const TEXT_COLUMNS = 40
+/** Dwell on the standard pose before the fallback whale's intro loops. */
+const WHALE_REST_MS = 3000
 
 /** The two things the modal can do (Chat supplies the real actions; tests
  * override them through the same seam). */
@@ -36,9 +39,9 @@ export interface StarPromptActions {
  * the milestone, three body lines, two actions — `gh` one-key star or open
  * the repo in a browser — with the selection cursor on the star line and a
  * low-pressure `Esc`-to-dismiss hint on the same row the buttons live in.
- * The maid portrait stands to the left whenever the terminal has room and
- * the image protocols are live (`maidPortrait.tsx`); without them the pixel
- * whale's standard pose takes the slot — never character blocks.
+ * The art slot is the raster maid FIRST (`maidPortrait.tsx`); without image
+ * protocols it falls back to the ANIMATED pixel whale (the classic intro
+ * on a loop) — never a static placeholder.
  */
 export function StarPrompt({
   milestone,
@@ -54,6 +57,28 @@ export function StarPrompt({
   const { columns, rows } = useTerminalSize()
   const imagesAvailable = useTerminalImages()
   const maidSource = useMaidPortrait(imagesAvailable)
+  const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
+  const whaleAnimating = withArt && !(imagesAvailable && maidSource !== undefined)
+  const [whaleFrame, setWhaleFrame] = React.useState(STANDARD_FRAME_INDEX)
+  // 回落的鲸鱼要「会动」：循环经典开场（眨眼 → 喷水 → 摆尾），收尾在
+  // 标准帧上歇 3 秒再来一轮——共用 whaleFrames 的节奏表，不另造帧。
+  // 只在回落形态驱动；弹窗一关（整树卸载）定时器即清。
+  React.useEffect(() => {
+    if (!whaleAnimating) return
+    const sequence = OPENING_SEQUENCES.classic
+    let step = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = (): void => {
+      const current = sequence[step] ?? sequence[0]!
+      setWhaleFrame(current.frame)
+      const last = step === sequence.length - 1
+      step = (step + 1) % sequence.length
+      timer = setTimeout(tick, last ? WHALE_REST_MS : current.ms)
+      ;(timer as { unref?: () => void }).unref?.()
+    }
+    tick()
+    return () => { if (timer !== undefined) clearTimeout(timer) }
+  }, [whaleAnimating])
   const [selected, setSelected] = React.useState(0)
   // Some terminals report one Enter twice (parsed Return then raw CR); the
   // modal must not fire its action twice for one press.
@@ -76,7 +101,6 @@ export function StarPrompt({
     }
   })
 
-  const withArt = columns >= MIN_ART_COLUMNS && rows >= MIN_ART_ROWS
   const textColumns = withArt ? TEXT_COLUMNS : Math.max(24, Math.min(TEXT_COLUMNS + 8, columns - 6))
   const cardColumns = withArt ? 88 : Math.min(columns, textColumns + 6)
   const cardRows = withArt ? 17 : 12
@@ -126,13 +150,13 @@ export function StarPrompt({
         onClick={event => { event.stopImmediatePropagation() }}
       >
         {withArt && (
-          // 40 列槽位双档共用：真图立绘（30×15，居中）或像素鲸鱼标准帧
-          //（40×13）——终端图像协议不可用时绝不退到字符块。
+          // 40 列槽位：最优先真图立绘（30×15，居中）；终端图像协议不可
+          // 用时回落**会动的像素鲸鱼**（经典开场循环，40×13 居中）。
           <Box width={40} height={15} flexShrink={0} flexDirection="row" justifyContent="center" alignItems="center">
             {imagesAvailable && maidSource !== undefined ? (
               <MaidPortrait source={maidSource} maxColumns={40} maxRows={15} presentation="preview" />
             ) : (
-              <WhaleArt width={40} />
+              <WhaleArt frameIndex={whaleFrame} width={40} />
             )}
           </Box>
         )}

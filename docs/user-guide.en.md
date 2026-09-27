@@ -409,7 +409,7 @@ An empty session shows the whale logo area at the top (scrolls away with the con
 
 - **Intro animation** (~3.4 s, three picked each launch, `/deepseek` egg re-rolls): classic / heart / sleep.
 - **Welcome idle animation** (`whaleIdle`, default on): fin, blink, tail wag, sleeps with Z after 10 s idle; **click to show a heart and wake it**.
-- **Maid portrait** (`whaleGirl`, default off): swaps the header's pixel whale for the author-drawn maid, rendered as a **real raster** through the terminal image protocols (Kitty/Sixel) — the art keeps its anti-aliased curves and full palette; terminals without graphics support fall back to the pixel whale, idle animation intact.
+- **Maid portrait** (`whaleGirl`, default off): swaps the header's pixel whale for the author-drawn maid — FIRST as a **real raster** through the terminal image protocols (Kitty/Sixel), keeping the art's anti-aliased curves and full palette; terminals without graphics support fall back to the character-art maid (the author's placeholder, to be replaced with better art). Both forms are static; idle animation stays whale-only.
 - After the first agent task, it freezes to a static frame (`/new` re-enters the welcome period).
 - Text column right of the whale: `✦ dsh-TUI v版本号` →
   `DEEPSEEK / HARNESS` big text (bold glyphs, both rows the same width, one blank row between) →

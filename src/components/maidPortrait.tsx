@@ -9,14 +9,12 @@ import { loadSharp } from '../dsh-adapter/sharp.js'
 /**
  * The maid portrait (鲸鱼娘) for `dsh-tui.whaleGirl` and the star modal —
  * the author-designed 464×464 pixel art shipped at `assets/whale-girl/`,
- * rendered through the terminal image protocols (Kitty graphics / Sixel)
- * instead of character blocks: at real raster fidelity the art keeps its
- * anti-aliased curves and 270+ colors, which half-block cells cannot carry.
- *
- * The whole chain degrades to the pixel whale: no image protocol (inline
- * mode, unsupported terminal), no `sharp`, or a missing/unreadable asset all
- * leave the caller's fallback in place — the setting never makes the header
- * worse than the whale it replaces.
+ * rendered FIRST as a real raster through the terminal image protocols
+ * (Kitty graphics / Sixel): full fidelity, anti-aliased curves, the whole
+ * palette. The chain degrades per surface when images cannot show — the
+ * header falls back to the character-art maid (`WhaleGirl.tsx`, the
+ * author's placeholder), the star modal to the animated pixel whale — so
+ * the setting never leaves the header worse than the whale it replaces.
  */
 
 /** Asset candidates cover both layouts: `lib/types/components` (published)
