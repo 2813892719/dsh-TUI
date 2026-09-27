@@ -408,14 +408,24 @@ const modalShown = (text: string) => text.includes('不知不觉') && text.inclu
   await chat.unmount()
 }
 
-// E：非历史档（24h）不弹窗。
+// E：非弹窗档（50h）不弹窗；24h 这一档**会**弹（用户要求把门槛从 99h 提前）。
 {
   const dir = join(fixtureHome, 'case-e')
+  seedUsage(dir, { launches: 1, totalMs: 50 * HOUR_MS + 60_000, celebrated: 1 })
+  const chat = await mountChat({ dir })
+  await sleep(1500) // 固定窗:探针 非弹窗档不得弹窗——"不出现"没有可轮询锚点，观察窗须盖过 700ms 的弹窗延迟
+  check('E1 a passive milestone never opens the modal', !chat.plain().includes('不知不觉'))
+  check('E2 a passive milestone leaves the ledger untouched', readCelebrated(dir) === 1)
+  await chat.unmount()
+}
+
+// E3：24h 档现在也弹窗（第一次陪你一整天）。
+{
+  const dir = join(fixtureHome, 'case-e3')
   seedUsage(dir, { launches: 1, totalMs: 24 * HOUR_MS + 60_000, celebrated: 0 })
   const chat = await mountChat({ dir })
-  await sleep(1500) // 固定窗:探针 非历史档不得弹窗——"不出现"没有可轮询锚点，观察窗须盖过 700ms 的弹窗延迟
-  check('E1 a non-historic milestone never opens the modal', !chat.plain().includes('不知不觉'))
-  check('E2 a non-historic milestone leaves the ledger untouched', readCelebrated(dir) === 0)
+  check('E3 the 24h milestone opens the modal now',
+    await settled(() => modalShown(chat.plain()), { timeoutMs: 5000 }) && readCelebrated(dir) === 1)
   await chat.unmount()
 }
 

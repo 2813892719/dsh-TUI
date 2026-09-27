@@ -72,13 +72,13 @@ const modalIndexes = STAR_MILESTONES.map((milestone, index) => (milestone.modal 
   index => index >= 0,
 )
 check(
-  '只有 99h 与 999 次配弹窗（其余档绝不拦路）',
-  modalIndexes.length === 2 &&
-    STAR_MILESTONES[modalIndexes[0]].hours === 99 &&
-    STAR_MILESTONES[modalIndexes[1]].launches === 999 &&
-    isHistoricMilestone(modalIndexes[0]) &&
-    isHistoricMilestone(modalIndexes[1]) &&
-    !isHistoricMilestone(0),
+  '24h、99h 与 999 次配弹窗（其余档绝不拦路）',
+  modalIndexes.length === 3 &&
+    STAR_MILESTONES[modalIndexes[0]].hours === 24 &&
+    STAR_MILESTONES[modalIndexes[1]].hours === 99 &&
+    STAR_MILESTONES[modalIndexes[2]].launches === 999 &&
+    modalIndexes.every(index => isHistoricMilestone(index)) &&
+    !isHistoricMilestone(1),
   `弹窗档位下标 ${modalIndexes.join('、')}`,
 )
 check('报过第 0 档后不再报它（下一档未达 → null）', pendingStarMilestone(at({ totalMs: 30 * hour, celebrated: 1 })) === null)
