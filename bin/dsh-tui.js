@@ -456,7 +456,8 @@ const MSG = {
       `  -c, --continue         Same as --resume\n` +
       `  -- <prompt...>        Treat the remaining arguments as literal prompt text\n` +
       `  <path|url>             Open with the given workspace target\n\n` +
-      `Any other argument is forwarded as an app argument to \`dsh --profile ${PROFILE}\`.`,
+      `Leading DSH options (e.g. --dump-config, --patch <path>) are forwarded unchanged.\n` +
+      `Other arguments go to the app in \`dsh --profile ${PROFILE}\`.`,
     zh:
       `用法：dsh-tui|dst [命令] [选项] [路径|URL]\n\n` +
       `命令：\n` +
@@ -472,7 +473,8 @@ const MSG = {
       `  -c, --continue         同 --resume\n` +
       `  -- <提示词...>         将剩余参数作为字面提示词\n` +
       `  <路径|URL>             以指定工作区目标启动\n\n` +
-      `其余参数作为应用参数转发给 \`dsh --profile ${PROFILE}\`。`,
+      `前置 DSH 选项（如 --dump-config、--patch <路径>）原样转发。\n` +
+      `其余参数交给 \`dsh --profile ${PROFILE}\` 中的应用。`,
   },
 }
 const msg = key => MSG[key][lang]
@@ -724,11 +726,7 @@ const forwardExit = child => {
 // 不从数值反推信号（spec §5.1）。
 const startDshSession = (dshArgs, profile = PROFILE, env = process.env) =>
   new Promise(resolve => {
-    // DSH consumes its own --. Keep the app argv behind that boundary so an
-    // app-level -- survives, and literal prompt flags cannot select a profile.
-    const argv = ['--profile', profile]
-    if (dshArgs.length > 0) argv.push('--', ...dshArgs)
-    const child = spawn(...cmd('dsh', argv), {
+    const child = spawn(...cmd('dsh', ['--profile', profile, ...dshArgs]), {
       stdio: 'inherit',
       env,
       ...shellOpt,
@@ -1338,6 +1336,12 @@ if (!runningInsideProfile && ownVersion !== undefined && process.env.DSH_TUI_NO_
     }
     return ''
   }
+  // Launcher-owned options from DSH apps/cli/src/args.ts. Only classify the
+  // leading prefix here; DSH still owns validation and execution. Keep this
+  // inline: migrated global launchers must not depend on lib/ or other files.
+  const dshValueFlags = new Set(['--profile', '--from-default-profile', '--patch'])
+  const dshSwitches = new Set(['--dump-config', '--dump-default-config', '--dump-config-schema', '-V', '--version'])
+  const hostArgs = []
   const args = []
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i++) {
@@ -1345,6 +1349,20 @@ if (!runningInsideProfile && ownVersion !== undefined && process.env.DSH_TUI_NO_
     if (a === '--') {
       args.push(...argv.slice(i))
       break
+    }
+    if (args.length === 0) {
+      const flag = a.split('=', 1)[0]
+      if (dshValueFlags.has(flag)) {
+        hostArgs.push(a)
+        // Required host values are raw tokens, even when flag-shaped. Never
+        // intercept them as a resume flag or an existing workspace path.
+        if (a === flag && argv[i + 1] !== undefined) hostArgs.push(argv[++i])
+        continue
+      }
+      if (dshSwitches.has(a)) {
+        hostArgs.push(a)
+        continue
+      }
     }
     if (a === '--resume' || a === '-c' || a === '--continue' || a.startsWith('--resume=')) {
       let sessionId = ''
@@ -1371,6 +1389,8 @@ if (!runningInsideProfile && ownVersion !== undefined && process.env.DSH_TUI_NO_
     process.env.DSH_TUI_LAUNCHER_VERSION = ownVersion
   }
 
-  const firstArgs = args
+  // DSH consumes its own --; only the app tail belongs behind it. Preserve
+  // the app-level separator too, and replay this same argv on a safe retry.
+  const firstArgs = [...hostArgs, ...(args.length > 0 ? ['--', ...args] : [])]
   settleFirstResult(await startDshSession(firstArgs), firstArgs)
 }

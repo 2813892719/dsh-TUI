@@ -171,6 +171,21 @@ r = runBin(['foo', 'a b'])
 check('passthrough: app args forwarded after the host separator', stubCalls().at(-1) === '<--profile><dsh-tui><--><foo><a b>')
 check('passthrough: silent when aligned', r.stderr.trim() === '')
 
+// DSH keeps ownership of its leading options and values. Its separator comes
+// after that prefix, without consuming the app's literal-prompt separator.
+const overlay = join(tmp, 'overlay with spaces.yml')
+writeFileSync(overlay, '[]\n')
+for (const [args, suffix] of [
+  [['--dump-config'], '<--dump-config>'],
+  [['--patch', 'missing.yml'], '<--patch><missing.yml>'],
+  [['--patch', overlay, '--dump-config'], `<--patch><${overlay}><--dump-config>`],
+  [['--patch', overlay, '--', '--resume=literal'], `<--patch><${overlay}><--><--><--resume=literal>`],
+]) {
+  resetStubLog()
+  r = runBin(args)
+  check(`DSH prefix: ${args.join(' ')}`, r.status === 0 && stubCalls().at(-1) === `<--profile><dsh-tui>${suffix}`)
+}
+
 // --- 2.5 profile 非零退出：保留退出码与可直接复现的命令（须在版本对齐时测，
 // 错位提示/拒绝会干扰退出码与 stderr 断言）-------------------------------------
 resetStubLog()
