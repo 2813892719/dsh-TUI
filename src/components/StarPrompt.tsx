@@ -114,6 +114,9 @@ export function StarPrompt({
         setFailure(attempt.kind === 'failed'
           ? t('star-failed', { detail: attempt.detail, url: attempt.url })
           : t(attempt.kind === 'no-gh' ? 'star-no-gh' : 'star-not-authed', { url: attempt.url }))
+        // gh 缺失/未登录这类"本机没法一键"的结局：光标直接落到浏览器那一行，
+        // 用户按一下 Enter 就打开浏览器自己去点（不必先按 ↓）。
+        if (attempt.kind === 'no-gh' || attempt.kind === 'not-authed') setSelected(1)
         setPhase('failed')
       },
       (error: unknown) => {
@@ -289,8 +292,7 @@ export function StarPrompt({
                     <Box height={1} />
                     <Text color="error" wrap="wrap">{failure}</Text>
                   </>
-                )}
-                {phase !== 'failed' && (
+                )}                {phase !== 'failed' && (
                   <>
                     <Box height={1} />
                     <Divider width={textColumns} />
