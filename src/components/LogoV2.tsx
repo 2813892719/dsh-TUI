@@ -351,6 +351,11 @@ export function LogoV2({
   const { top, bottom, topKerning, bottomKerning, bottomIndent } = titleFont.tagline
   const bigDeepSeek = renderBigText(titleFont, top, t, titleFont.palette?.from ?? wordmarkRGB, titleFont.palette?.to ?? taglineRGB, FLASH, 60, topKerning)
   const bigHarness = renderBigText(titleFont, bottom, t, titleFont.palette?.from ?? taglineRGB, titleFont.palette?.to ?? PALE, FLASH, 60, bottomKerning, bottomIndent)
+  // 立绘槽位的**唯一真源**：文字列的实际行数——词标 1 + 两排大字 + 两排
+  // 之间空 1 行 + 模型/目录/提示 3 行。槽位与它等高，图片既不压过文字列
+  // 也不留一截在下面（实机反馈「超出去、不和谐」）；大字换字体/换词时也
+  // 自动跟着变，不写死 15。
+  const textColumnRows = bigDeepSeek.length + bigHarness.length + 5
 
   return (
     <Box ref={ref} flexDirection="column" marginTop={1}>
@@ -376,22 +381,23 @@ export function LogoV2({
             }}
           >
             {whaleGirl ? (
-              // 固定 16 行高、底色铺满槽位：真图与字符画女仆娘共用同一个
-              // 盒，真图解码完成换画时头部高度不跳。显式底色**必须是终端
-              // 真底色**（OSC 11 的回答；见 useTerminalBackground）——Sixel
+              // 槽位**与文字列严格等高**（textColumnRows）：真图与字符画女仆
+              // 娘共用同一个盒，真图解码完成换画时头部高度不跳，视觉上两者
+              // 齐平、谁也不多出一截。显式底色**必须是终端真底色**（OSC 11
+              // 的回答；见 useTerminalBackground）——Sixel
               // 没有 alpha，透明像素得合成到某个不透明衬底上，用错颜色就会
               // 出现一整块突兀的色块（theme.background 是徽标填充色，不是
               // 终端底色）。最优先永远是真图，字符画只是协议不可用时的保底。
               <Box
                 width={WHALE_BOX_WIDTH}
-                height={16}
+                height={textColumnRows}
                 flexDirection="row"
                 justifyContent="center"
                 alignItems="center"
                 backgroundColor={terminalBackground}
               >
                 {maidImageActive ? (
-                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={16} presentation="transcript" />
+                  <MaidPortrait source={maidSource} maxColumns={WHALE_BOX_WIDTH} maxRows={textColumnRows} presentation="transcript" />
                 ) : (
                   <WhaleGirlArt width={WHALE_BOX_WIDTH} />
                 )}
