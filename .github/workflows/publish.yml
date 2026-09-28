@@ -229,12 +229,16 @@ jobs:
         run: |
           set -euo pipefail
           sums="$RUNNER_TEMP/SHA256SUMS"
-          if ! gh release download "$TAG" --pattern SHA256SUMS --output "$sums" --clobber; then
-            echo "SHA256SUMS not on Release $TAG; bundles needed"
+          # Only finished, non-empty uploads count: a failed upload (e.g. a
+          # 502) can leave a same-named asset in state "starter" with size 0.
+          have="$(gh release view "$TAG" --json assets --jq '.assets[] | select(.state == "uploaded" and .size > 0) | .name')"
+          if ! grep -qxF SHA256SUMS <<<"$have" \
+            || ! gh release download "$TAG" --pattern SHA256SUMS --output "$sums" --clobber \
+            || [ ! -s "$sums" ]; then
+            echo "SHA256SUMS not uploaded on Release $TAG; bundles needed"
             echo "missing=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          have="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
           missing=false
           while read -r _ name; do
             [ -n "$name" ] || continue
