@@ -18,8 +18,8 @@ on:
         description: '上传到哪个 tag（默认：最新 release）'
         required: false
         type: string
-  # Called by publish.yml after it creates the Release (a Release created with
-  # github.token does not fire `release: published`).
+  # Called by publish.yml when the tag's Release lacks assets (a Release
+  # created with github.token does not fire `release: published`).
   workflow_call:
     inputs:
       tag:
@@ -33,6 +33,11 @@ permissions:
 jobs:
   bundle:
     runs-on: ubuntu-latest
+    # One upload per tag at a time (release:published vs. publish.yml call);
+    # the later run re-uploads with --clobber.
+    concurrency:
+      group: release-bundle-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+      cancel-in-progress: false
     steps:
       # Build from the tag so bundles carry that tag's package.json version.
       - uses: actions/checkout@v7
