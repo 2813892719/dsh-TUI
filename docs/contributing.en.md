@@ -571,11 +571,21 @@ guide owns detailed contracts such as the toolchain and verification matrix.
   tag whose version exactly matches `package.json`, then builds, runs focused
   regressions, and publishes to npm.
   - Treat version changes and tags as release operations, not routine cleanup.
-- Release notes credit contributors. Create GitHub Releases with
-  `gh release create vX.Y.Z --notes-file notes.md --generate-notes`.
-  - The hand-written summary comes first, and GitHub appends What's Changed
-    (PR title + author + link), New Contributors, and the Full Changelog;
-    `.github/release.yml` excludes bots from the generated list.
+- Release notes credit contributors, and GitHub Releases are not created by
+  hand: after npm publish, `publish.yml` creates the tag's Release with
+  `--generate-notes`, so GitHub writes What's Changed (PR title + author +
+  link), New Contributors, and the Full Changelog; `.github/release.yml`
+  excludes bots from the generated list. The same run then builds and uploads
+  the release bundles.
+  - Optional hand-written summary: commit `.github/release-notes/vX.Y.Z.md`
+    before tagging, and the generated notes follow it. Without that file the
+    Release carries the generated notes only.
+  - If the Release already exists (a rerun, or a maintainer created it first),
+    the job updates instead of failing: a body that already has What's Changed
+    is left alone; a hand-written body gets the generated notes appended below
+    it and is never replaced.
+  - To backfill notes for an existing tag, run Actions → Publish → Run
+    workflow with that tag. It only touches the Release and skips npm publish.
   - In the hand-written summary, entries from external contributors end with
     `(#PR by @user)`; the maintainer's own entries are unmarked.
   - Write bare `#123` and `@user` — GitHub renders them as links.
