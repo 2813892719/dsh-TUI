@@ -3,8 +3,8 @@
  * one JSON document, one credential per provider id.
  *
  * Writes are atomic (temp file + rename) with 0700 directory / 0600 file
- * permissions best-effort on every platform. Mutations share one queue for
- * the whole file in-process; pi-ai runs its OAuth refresh *inside*
+ * permissions best-effort on every platform. Mutations share an in-process
+ * queue and a cross-process file lock; pi-ai runs its OAuth refresh *inside*
  * {@link CredentialFile.modify}, so the exclusion also keeps concurrent
  * requests from double-refreshing a rotated token. The file is the single
  * source of truth;
@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { PiAiCredential, PiAiCredentialInfo, PiAiCredentialStore } from './pi-ai.js'
 
 /** The stored credential shape: a pi-ai `OAuthCredential`. */
@@ -126,7 +127,7 @@ export class CredentialFile implements PiAiCredentialStore {
     fn: (current: PiAiCredential | undefined) => Promise<PiAiCredential | undefined>,
   ): Promise<PiAiCredential | undefined> {
     return this.chain(async () => {
-      const document = await this.load()
+      const document = await this.load(true)
       const current = document.providers[providerId]
       const replacement = await fn(current)
       if (replacement === undefined || replacement === current) return current
@@ -141,7 +142,7 @@ export class CredentialFile implements PiAiCredentialStore {
   /** Remove one provider's credential (logout). */
   async delete(providerId: string): Promise<void> {
     await this.chain(async () => {
-      const document = await this.load()
+      const document = await this.load(true)
       if (!(providerId in document.providers)) return
       const providers = { ...document.providers }
       delete providers[providerId]
@@ -162,15 +163,20 @@ export class CredentialFile implements PiAiCredentialStore {
       }))
   }
 
-  /** Run one mutation after every earlier mutation of this document. */
+  /** Keep the entire read-modify-rename cycle exclusive across processes. */
   private chain<T>(operation: () => Promise<T>): Promise<T> {
-    const run = this.pending.then(operation, operation)
+    const run = this.pending.then(() => {
+      mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 })
+      // pi-ai may refresh a token over the network while holding this lock.
+      return withFileLock(this.path, operation, { waitMs: 120_000 })
+    })
     this.pending = run.then(() => undefined, () => undefined)
     return run
   }
 
-  private async load(): Promise<CredentialsDocument> {
-    if (this.cache !== undefined) return this.cache
+  private async load(fresh = false): Promise<CredentialsDocument> {
+    if (!fresh && this.cache !== undefined) return this.cache
+    this.cache = undefined
     let text: string
     try {
       text = readFileSync(this.path, 'utf8')
@@ -214,7 +220,6 @@ export class CredentialFile implements PiAiCredentialStore {
   private async save(document: CredentialsDocument): Promise<void> {
     const text = JSON.stringify(document, null, 2) + '\n'
     const directory = dirname(this.path)
-    mkdirSync(directory, { recursive: true, mode: 0o700 })
     const temporary = join(directory, `.${Math.random().toString(36).slice(2)}.tmp`)
     try {
       writeFileSync(temporary, text, { mode: 0o600 })

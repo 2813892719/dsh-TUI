@@ -189,6 +189,43 @@ try {
     && concurrentDocument.providers['meta']?.access === 'm1',
   'concurrent writes to different providers retain both credentials on disk')
 
+  const sharedPath = join(root, 'cross-process', 'credentials.json')
+  const parentStore = new CredentialFile(sharedPath)
+  let childDone
+  await parentStore.modify('openai-codex', async () => {
+    const child = spawn(process.execPath, [
+      '--input-type=module', '-e', `
+        const { CredentialFile } = await import(process.argv[1])
+        const store = new CredentialFile(process.argv[2])
+        await store.read('meta')
+        process.stdout.write('ready\\n')
+        await store.modify('meta', async () => ({ type: 'oauth', access: 'm2', refresh: 'r', expires: Date.now() + 60_000 }))
+      `,
+      new URL('../lib/types/dsh-adapter/oauth/credentials.js', import.meta.url).href, sharedPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let childError = ''
+    child.stderr.on('data', chunk => { childError += String(chunk) })
+    childDone = new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', code => code === 0 ? resolve() : reject(new Error(childError || `child exited ${code}`)))
+    })
+    await new Promise((resolve, reject) => {
+      child.stdout.once('data', chunk => String(chunk).includes('ready') ? resolve() : reject(new Error(`unexpected child output: ${chunk}`)))
+      child.once('error', reject)
+    })
+    return { type: 'oauth', access: 'c2', refresh: 'r', expires: Date.now() + 60_000 }
+  })
+  await childDone
+  const sharedDocument = JSON.parse(readFileSync(sharedPath, 'utf8'))
+  ok(sharedDocument.providers['openai-codex']?.access === 'c2'
+    && sharedDocument.providers['meta']?.access === 'm2',
+  'two processes writing one credential file retain both providers')
+  await parentStore.delete('openai-codex')
+  const afterCrossProcessDelete = JSON.parse(readFileSync(sharedPath, 'utf8'))
+  ok(afterCrossProcessDelete.providers['openai-codex'] === undefined
+    && afterCrossProcessDelete.providers['meta']?.access === 'm2',
+  'deleting from a stale store retains another process\'s credential')
+
   let refusedWrite = ''
   try {
     await store.modify('xai', async () => ({ type: 'api_key', key: 'nope' }))
