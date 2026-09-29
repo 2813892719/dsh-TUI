@@ -1,0 +1,190 @@
+/**
+ * File-backed OAuth credential persistence: a pi-ai `CredentialStore` over
+ * one JSON document, one credential per provider id.
+ *
+ * Writes are atomic (temp file + rename) with 0700 directory / 0600 file
+ * permissions best-effort on every platform. All mutations go through
+ * {@link CredentialFile.modify}, which serializes read-modify-write cycles
+ * per provider in-process — pi-ai runs its OAuth refresh *inside* `modify`,
+ * so the exclusion here is what keeps concurrent requests from
+ * double-refreshing a rotated token. The file is the single source of truth;
+ * nothing here ever logs token material, and {@link CredentialFile.describe}
+ * reports only non-secret metadata for status surfaces.
+ *
+ * @module @deepseek-harness-tui/dsh-tui/oauth/credentials
+ */
+
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import type { PiAiCredential, PiAiCredentialInfo, PiAiCredentialStore } from './pi-ai.js'
+
+/** The stored credential shape: a pi-ai `OAuthCredential`. */
+export type StoredOAuthCredential = Extract<PiAiCredential, { type: 'oauth' }>
+
+/** On-disk document shape. */
+interface CredentialsDocument {
+  version: 1
+  providers: Record<string, PiAiCredential>
+}
+
+/** Narrow an unknown parsed value into a stored credential, or reject it. */
+export function asStoredCredential(value: unknown): StoredOAuthCredential | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  if (record['type'] !== 'oauth') return undefined
+  if (typeof record['access'] !== 'string' || typeof record['refresh'] !== 'string') return undefined
+  if (typeof record['expires'] !== 'number' || !Number.isFinite(record['expires'])) return undefined
+  return value as StoredOAuthCredential
+}
+
+/** Default credential file location: `$DSH_HOME/dsh-auth/credentials.json` (or `~/.dsh/…`). */
+export function defaultCredentialsFile(): string {
+  const override = process.env['DSH_AUTH_CREDENTIALS']
+  if (override !== undefined && override !== '') return override
+  const root = process.env['DSH_HOME'] ?? join(homedir(), '.dsh')
+  return join(root, 'dsh-auth', 'credentials.json')
+}
+
+const EMPTY_DOCUMENT: CredentialsDocument = { version: 1, providers: {} }
+
+/**
+ * The credential file. IO failures throw (loud, naming the path) rather than
+ * degrading to an empty store: silently treating a corrupt or unreadable
+ * credential file as "signed out everywhere" would strand every route behind
+ * a fresh login for no reason.
+ */
+export class CredentialFile implements PiAiCredentialStore {
+  readonly path: string
+  /** Per-provider operation chains: modify/delete never overlap for one id. */
+  private readonly chains = new Map<string, Promise<unknown>>()
+  private cache: CredentialsDocument | undefined
+
+  constructor(path: string) {
+    this.path = path
+  }
+
+  /** The stored credential for one provider, possibly expired. */
+  async read(providerId: string): Promise<PiAiCredential | undefined> {
+    return (await this.load()).providers[providerId]
+  }
+
+  /** Stored credential metadata without resolving or exposing secrets. */
+  async list(): Promise<readonly PiAiCredentialInfo[]> {
+    const document = await this.load()
+    return Object.entries(document.providers).map(([providerId, credential]) => ({
+      providerId,
+      type: credential.type,
+    }))
+  }
+
+  /**
+   * Serialized read-modify-write for one provider. `fn` sees the current
+   * credential; returning a new credential persists it, returning
+   * `undefined` leaves the entry unchanged. Resolves with the post-write
+   * credential. Rejections from `fn` propagate without touching the file.
+   */
+  async modify(
+    providerId: string,
+    fn: (current: PiAiCredential | undefined) => Promise<PiAiCredential | undefined>,
+  ): Promise<PiAiCredential | undefined> {
+    return this.chain(providerId, async () => {
+      const document = await this.load()
+      const current = document.providers[providerId]
+      const replacement = await fn(current)
+      if (replacement === undefined || replacement === current) return current
+      if (replacement.type !== 'oauth') {
+        throw new Error(`dsh-auth: refusing to store a "${replacement.type}" credential for "${providerId}" — this store holds OAuth credentials only`)
+      }
+      await this.save({ ...document, providers: { ...document.providers, [providerId]: replacement } })
+      return replacement
+    })
+  }
+
+  /** Remove one provider's credential (logout). */
+  async delete(providerId: string): Promise<void> {
+    await this.chain(providerId, async () => {
+      const document = await this.load()
+      if (!(providerId in document.providers)) return
+      const providers = { ...document.providers }
+      delete providers[providerId]
+      await this.save({ ...document, providers })
+    })
+  }
+
+  /** Non-secret metadata for every stored credential, for status surfaces. */
+  async describe(): Promise<readonly { provider: string; expiresAt: number; expired: boolean }[]> {
+    const document = await this.load()
+    const now = Date.now()
+    return Object.entries(document.providers)
+      .filter((entry): entry is [string, StoredOAuthCredential] => entry[1].type === 'oauth')
+      .map(([provider, credential]) => ({
+        provider,
+        expiresAt: credential.expires,
+        expired: credential.expires <= now,
+      }))
+  }
+
+  /** Run one operation after every earlier operation for the same provider. */
+  private chain<T>(provider: string, operation: () => Promise<T>): Promise<T> {
+    const run = (this.chains.get(provider) ?? Promise.resolve()).then(operation, operation)
+    this.chains.set(provider, run.then(() => undefined, () => undefined))
+    return run
+  }
+
+  private async load(): Promise<CredentialsDocument> {
+    if (this.cache !== undefined) return this.cache
+    let text: string
+    try {
+      text = readFileSync(this.path, 'utf8')
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+        this.cache = EMPTY_DOCUMENT
+        return this.cache
+      }
+      throw new Error(`dsh-auth: cannot read credential file ${this.path}: ${String(error)}`)
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch (error: unknown) {
+      throw new Error(
+        `dsh-auth: credential file ${this.path} is not valid JSON (${String(error)}); `
+        + 'fix or remove the file by hand — it will not be overwritten silently',
+      )
+    }
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error(`dsh-auth: credential file ${this.path} has an unexpected shape; fix or remove it by hand`)
+    }
+    const record = parsed as Record<string, unknown>
+    if (record['version'] !== 1 || typeof record['providers'] !== 'object' || record['providers'] === null) {
+      throw new Error(`dsh-auth: credential file ${this.path} has an unexpected shape; fix or remove it by hand`)
+    }
+    const providers: Record<string, PiAiCredential> = {}
+    for (const [provider, value] of Object.entries(record['providers'] as Record<string, unknown>)) {
+      const credential = asStoredCredential(value)
+      if (credential === undefined) {
+        throw new Error(
+          `dsh-auth: credential file ${this.path} holds an invalid entry for "${provider}"; fix or remove it by hand`,
+        )
+      }
+      providers[provider] = credential
+    }
+    this.cache = { version: 1, providers }
+    return this.cache
+  }
+
+  private async save(document: CredentialsDocument): Promise<void> {
+    const text = JSON.stringify(document, null, 2) + '\n'
+    const directory = dirname(this.path)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const temporary = join(directory, `.${Math.random().toString(36).slice(2)}.tmp`)
+    try {
+      writeFileSync(temporary, text, { mode: 0o600 })
+      renameSync(temporary, this.path)
+    } catch (error: unknown) {
+      throw new Error(`dsh-auth: cannot write credential file ${this.path}: ${String(error)}`)
+    }
+    this.cache = document
+  }
+}

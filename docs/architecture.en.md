@@ -23,6 +23,7 @@ Cordis profile
 | --- | --- |
 | `src/index.ts` | Cordis plugin name, injection declaration, config interface, and Schema; keep the entry small and lazy |
 | `src/dsh-adapter/plugin.ts` | TTY guard, service assembly, Agent create/resume, React mount, and the single cleanup funnel |
+| `src/dsh-adapter/oauth/`, `src/oauth.ts` | Built-in subscription OAuth provider routes, `/auth` command, credential store, and question bridge; the public subpath only forwards to the internal implementation |
 | `src/dsh-adapter/questions-answerer.ts` / `preset-resolution.ts` | Prerelease dispatch for user questions and agent presets; consumers stay unaware of upstream version branches |
 | `src/dsh-adapter/channel.ts` | Channel composition root: options/services, owner/binding, specialist wiring, one install, final start/release, and compatibility exports |
 | `src/workspaces.ts` | Local-path fallback and generic workspace-provider registry; it must contain no provider protocol, copy, or dependency |
@@ -34,6 +35,14 @@ Cordis profile
 | `src/ink/` | Ink-based renderer, terminal protocol, events, selection, and Yoga bridge; sensitive infrastructure |
 | `src/native-ts/yoga-layout/` | Pure JS/TS layout implementation |
 | `cordis.patch.yml` | Profile bundle layer, service rows, overrides, and mount ordering |
+
+The standard profile still mounts the internal `./oauth` entry as the
+`dsh-tui-auth` Cordis row before the TUI, with row-level
+`inject: [llm, commands]` preserving registration order. The TUI consumes
+status and actions through `ctx.dshAuth`; it does not implement model or OAuth
+protocols. The credential location is unchanged, and the host's pi-ai supplies
+the authorization flows. Bare `cordis.yml` does not insert this row and has a
+different topology.
 
 The `channel.ts` responsibilities are split across these files:
 

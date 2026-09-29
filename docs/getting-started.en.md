@@ -12,8 +12,9 @@
   then exits right after startup with almost no error output (issue #60, see
   Troubleshooting below).
 - An interactive terminal TTY. `dsh-tui` cannot start with stdout redirected.
-- `DEEPSEEK_API_KEY`. Set `DEEPSEEK_BASE_URL` as well when using a compatible
-  custom endpoint.
+- DeepSeek models need `DEEPSEEK_API_KEY`; the standard profile can sign in to
+  supported subscriptions through `/provider` or `/auth` after startup. Set
+  `DEEPSEEK_BASE_URL` as well for a compatible custom endpoint.
 
 macOS/Linux:
 
@@ -272,13 +273,13 @@ pnpm build
 pnpm smoke
 ```
 
-The repository has three submodules, and two of them are required to install:
+The repository has two submodules; `vendor/dsh-std` is required to install:
 
 - `vendor/dsh-std`: its `packages/*` are listed as workspace packages in
   `pnpm-workspace.yaml`.
-- `dsh-auth`: pulled in through `link:`.
+- `dsh-ecosystem-spec`: the ecosystem specification used by contract checks.
 
-Without `--recurse-submodules` those directories stay empty and
+Without `--recurse-submodules` these directories stay empty and
 `pnpm install --frozen-lockfile` fails outright. For a checkout that was
 already cloned:
 
@@ -375,8 +376,10 @@ dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui@latest
 
 ### The model reports missing credentials
 
-Confirm that `DEEPSEEK_API_KEY` is set in the same shell that starts `dsh`.
-Check `DEEPSEEK_BASE_URL` too when using a custom endpoint.
+For a DeepSeek model, confirm that `DEEPSEEK_API_KEY` is set in the same shell
+that starts `dsh`. Check `DEEPSEEK_BASE_URL` too for a custom endpoint. For a
+subscription model, inspect `/auth status` and sign in again with
+`/auth login <provider>` if needed.
 
 ### The activity row appears twice
 

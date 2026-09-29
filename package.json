@@ -115,8 +115,7 @@
     "clean": "node scripts/clean-lib.mjs",
     "build:dsh-std": "pnpm --dir vendor/dsh-std install --frozen-lockfile --ignore-scripts && pnpm --dir vendor/dsh-std --filter @dsh-std/core --filter @dsh-std/manifest --filter @dsh-std/connection --filter @dsh-std/presentation --filter @dsh-std/command --filter @dsh-std/storage --filter @dsh-std/messages -r build",
     "build:mathjax": "pnpm --filter @dsh-tui-vendor/mathjax-tex-svg run build",
-    "build:dsh-auth": "pnpm --dir dsh-auth install --frozen-lockfile --ignore-scripts && pnpm --dir dsh-auth run build",
-    "compile": "npm run build:dsh-std && npm run build:dsh-auth && npm run build:mathjax && npm run clean && tsc -p tsconfig.json && node scripts/gen-settings-json.mjs",
+    "compile": "npm run build:dsh-std && npm run build:mathjax && npm run clean && tsc -p tsconfig.json && node scripts/gen-settings-json.mjs",
     "compile:src": "tsc -p tsconfig.json && node scripts/gen-settings-json.mjs",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "prepare": "node scripts/prepare-guard.mjs && npm run compile",
@@ -134,6 +133,7 @@
     "verify:alpha-source": "node scripts/verify-alpha-source.mjs",
     "verify:herdr": "node --import tsx/esm scripts/verify-herdr-integration.ts",
     "verify:manifest-deps": "node --import tsx/esm scripts/verify-manifest-deps.ts",
+    "verify:oauth": "node scripts/verify-oauth.mjs",
     "verify:patch-surface": "node --import tsx/esm scripts/verify-patch-surface.ts",
     "verify:fixed-window": "node scripts/verify-fixed-window.mjs",
     "verify:web-coexistence": "node scripts/verify-web-coexistence.mjs",
@@ -365,7 +365,6 @@
   },
   "dependencies": {
     "@alcalzone/ansi-tokenize": "^0.3.0",
-    "@deepseek-harness-tui/dsh-auth": "link:./dsh-auth",
     "@dsh-std/command": "workspace:*",
     "@dsh-std/connection": "workspace:*",
     "@dsh-std/core": "workspace:*",
@@ -414,8 +413,7 @@
     "@dsh-std/manifest",
     "@dsh-std/messages",
     "@dsh-std/presentation",
-    "@dsh-std/storage",
-    "@deepseek-harness-tui/dsh-auth"
+    "@dsh-std/storage"
   ],
   "devDependencies": {
     "@deepseek-ai/dsh-agent-loop": "0.2.0-rc.1",

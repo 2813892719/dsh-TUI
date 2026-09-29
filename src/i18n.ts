@@ -551,7 +551,7 @@ const dict = {
   'login-base-url': { zh: 'Base URL: {{url}}', en: 'Base URL: {{url}}' },
   'login-official-endpoint': { zh: '官方端点', en: 'official endpoint' },
   'login-logout-hint': { zh: '使用 /provider 管理 DSH 凭据；若来源为 env，请删除对应环境变量并重启 dsh-tui', en: 'Manage DSH credentials with /provider; for env sources, remove the corresponding environment variable and restart dsh-tui' },
-  // /login 的 OAuth 账号状态段（dsh-auth 类插件挂载时追加）
+  // /login 的 OAuth 账号状态段（内置 OAuth 模块挂载时追加）
   'login-oauth-heading': { zh: '订阅账号（OAuth）:', en: 'Subscriptions (OAuth):' },
   'login-oauth-row': { zh: '  {{provider}} — {{state}}', en: '  {{provider}} — {{state}}' },
   'login-oauth-in': { zh: '已登录 · 令牌到期 {{time}}', en: 'signed in · token expires {{time}}' },
@@ -1311,7 +1311,7 @@ const dict = {
   'provider-q-switch': { zh: '立即切换到新 provider？', en: 'Switch to the new provider now?' },
   'provider-opt-switch-now': { zh: '切换到 {{model}}', en: 'Switch to {{model}}' },
   'provider-opt-switch-keep': { zh: '保持当前模型', en: 'Keep the current model' },
-  // /provider OAuth 分支（dsh-auth 等插件挂载 ctx.dshAuth 时出现）
+  // /provider OAuth 分支（内置 OAuth 模块挂载 ctx.dshAuth 时出现）
   'provider-opt-oauth': { zh: '订阅账号登录（OAuth）', en: 'Subscription sign-in (OAuth)' },
   'provider-opt-oauth-desc': { zh: '用 ChatGPT / Claude / Grok 等官方订阅账号登录，无需 API key', en: 'Sign in with an official subscription (ChatGPT / Claude / Grok) — no API key' },
   'provider-q-oauth': { zh: '登录哪个订阅账号？', en: 'Sign in to which subscription?' },
@@ -1322,7 +1322,7 @@ const dict = {
   'provider-opt-oauth-relogin-desc': { zh: '更换账号或刷新已有凭据', en: 'Switch accounts or refresh the stored credential' },
   'provider-opt-oauth-logout': { zh: '登出', en: 'Sign out' },
   'provider-opt-oauth-logout-desc': { zh: '删除本地保存的 OAuth 凭据', en: 'Remove the locally stored OAuth credential' },
-  'provider-oauth-none': { zh: '没有可 OAuth 登录的 provider（检查 dsh-auth 插件是否挂载）', en: 'No OAuth-capable providers (check whether the dsh-auth plugin is mounted)' },
+  'provider-oauth-none': { zh: '没有可 OAuth 登录的 provider（检查 OAuth 模块是否挂载）', en: 'No OAuth-capable providers (check whether the OAuth module is mounted)' },
   'provider-oauth-login-ok': { zh: '{{provider}} 登录成功', en: 'Signed in to {{provider}}' },
   'provider-oauth-login-failed': { zh: 'OAuth 登录失败 · {{{err}}}', en: 'OAuth sign-in failed · {{{err}}}' },
   'provider-oauth-logout-ok': { zh: '{{provider}} 已登出', en: 'Signed out of {{provider}}' },

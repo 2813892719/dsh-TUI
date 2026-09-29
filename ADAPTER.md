@@ -28,7 +28,7 @@ UI 层(`screens/`、`components/`、`ink/`、`hooks/`、`utils/`、`terminal-uti
   服务由 base 提供，模型可见的工具仍由 preset 控制；与 web-app 的差异见快照。
 - **config overrides**:8 行(原有 6 行加 session-telemetry-otel /
   plugin-package-inventory-deepseek),后两行保持 TUI 的隐私默认
-- **inserts**:18 行(dsh-tui、working-activity、dsh-tui-auth、六个插件互通行,以及
+- **inserts**:18 行(dsh-tui、working-activity、内置 OAuth 入口 dsh-tui-auth、六个插件互通行,以及
   dsh-tui-storage、dsh-tui-storage-json、dsh-tui-storage-domain、
   dsh-tui-workspace、dsh-tui-code-runtime、dsh-tui-subagent-model-selection-settings、
   dsh-tui-agent-presets、dsh-tui-agent-preset-registry、dsh-tui-cordis-host-runner)。这些 host-plane 行使用 dsh-tui 作用域 id,

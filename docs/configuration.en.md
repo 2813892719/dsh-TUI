@@ -300,10 +300,35 @@ Where it writes:
 | Provider profile | `llm-pi-ai.providers.<route>` in the active profile config on 0.1.7, or `~/.dsh/settings.yaml` on older hosts; the route registers on write and unregisters on delete |
 | API key | `~/.dsh/.credentials.yaml` (mode 0600), referenced as `<ROUTE>_API_KEY` |
 
-With the bundled dsh-auth plugin mounted, the add branch also offers
-**Subscription sign-in (OAuth)**: sign in to ChatGPT / Claude / Grok through
-the browser or device-code flow (no API key); `/auth status|login|logout`
-shares the same source.
+### Built-in subscription OAuth
+
+The standard profile's `dsh-tui-auth` row loads this package's `./oauth`
+entry; it **no longer depends on a separate `dsh-auth` plugin package**.
+The `/provider` add branch signs in to ChatGPT (`openai-codex`), Claude
+(`anthropic`), or Grok (`xai`) subscriptions. `/auth status`,
+`/auth login [provider]`, and `/auth logout <provider>` use the same credential
+store. Authorization runs through a browser or device-code flow and tries to
+open the page automatically; a host without an interactive question surface
+refuses sign-in explicitly.
+
+The `dsh-tui-auth` row accepts `providers` (default: all three; a non-empty
+subset), `credentialsFile` (custom file path), and
+`modelOverrides.<provider>.<model>` (optional `contextWindow` and `maxTokens`).
+A profile override replaces the whole `config` block, so retain every field
+you need. The flow implementation comes from the host's `dsh-llm-pi-ai` / pi-ai
+installation. Subscription authentication uses its subscription backend; it
+is not a general-purpose API key.
+
+The default credential file remains `$DSH_HOME/dsh-auth/credentials.json`
+(`~/.dsh/dsh-auth/credentials.json` when `DSH_HOME` is unset), with
+`DSH_AUTH_CREDENTIALS` as an override. Existing sign-ins need no migration or
+re-login. The `ctx.dshAuth` service name and `dsh-auth` log prefix remain for
+compatibility; they do not imply a separate installed package. The file
+contains long-lived refresh tokens; directory/file modes are best-effort
+0700/0600, and status surfaces show only sign-in and expiry
+metadata. Models appear in the picker after sign-in. If another `llm-pi-ai`
+profile already owns the same provider route, the OAuth route refuses the
+duplicate registration.
 
 ## Composition constraints
 
