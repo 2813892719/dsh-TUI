@@ -6,19 +6,17 @@
  * their options, text/secret/manual-code prompts expect the custom-answer
  * input row.
  *
- * `notify()` restores the host contract pi-ai's browser flows assume: the
- * `auth_url` / `device_code` events expect the *host* to open the browser
- * (their authorize URLs run hundreds of characters — wrapped across panel
- * lines they are unclickable, and hand-copying picks up wrap artifacts that
- * corrupt the encoded `redirect_uri`, which the provider then rejects). So
- * the bridge opens the URL itself, then shows one waiting panel carrying
- * copy / reopen / cancel actions until the flow settles. The device-code
- * path gets the same treatment: its short code is the thing to copy, and
- * the verification page is auto-opened too.
+ * `notify()` opens browser/device URLs for pi-ai. Browser flows immediately
+ * race a callback server against a `manual_code` prompt; the URL and
+ * copy/reopen/cancel actions therefore share that SAME question with the
+ * paste field. A separate waiting question would claim the FIFO question
+ * surface first and make remote/headless callback fallback unreachable.
+ * Browser flows without a manual prompt still get a waiting panel. Device
+ * flows use that panel to show/copy the short code until polling settles.
  *
  * One `AbortController` owns the whole run: pi-ai reads `interaction.signal`
- * to abort the flow, every ask request carries it so surfaces close their
- * panels, and the waiting panel's cancel action fires it.
+ * to abort the flow, ask requests compose it with per-prompt cancellation,
+ * and the waiting panel's cancel action fires it.
  *
  * Nothing here assumes a browser or GUI *exists* (TUI-RUN-001): when no
  * opener or clipboard helper is available the panel degrades to showing the
@@ -30,6 +28,7 @@
  */
 
 import type { AskUserQuestionItem, AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions'
+import { t } from '../../i18n.js'
 import { copyToClipboard, openInBrowser } from './opener.js'
 import type { PiAiAuthEvent, PiAiAuthInteraction, PiAiAuthPrompt } from './pi-ai.js'
 
@@ -49,19 +48,14 @@ export interface QuestionBridgeHelpers {
 export function describeEvent(event: PiAiAuthEvent): string {
   switch (event.type) {
     case 'auth_url':
-      return `Open this URL to authorize (a local callback completes sign-in):\n${event.url}`
+      return t('oauth-event-auth-url', { url: event.url })
     case 'device_code':
-      return `Visit ${event.verificationUri} and enter this code:\n  ${event.userCode}`
+      return t('oauth-event-device-code', { uri: event.verificationUri, code: event.userCode })
     case 'info':
     case 'progress':
       return event.message
   }
 }
-
-const CANCEL = 'Cancel sign-in'
-const OPEN_AGAIN = 'Open browser again'
-const COPY_LINK = 'Copy authorization link'
-const COPY_CODE = 'Copy code'
 
 /** One answer row, or a thrown error when the surface returned nothing usable. */
 function singleAnswer(answer: AskUserQuestionAnswer): { selected: string | undefined; custom: string | undefined } {
@@ -72,29 +66,38 @@ function singleAnswer(answer: AskUserQuestionAnswer): { selected: string | undef
 
 /** The waiting panel one event kind renders: body plus copy/reopen targets. */
 interface WaitingView {
+  kind: 'auth_url' | 'device_code'
   /** Base body, shown below the standing question line. */
   body: string
   /** What a copy action copies; also its action label. */
   copyLabel: string
   copyText: string
+  reopenLabel: string
+  cancelLabel: string
   /** What a reopen action opens, when this view offers one. */
   reopenUrl: string | undefined
 }
 
-function authUrlView(url: string, instructions: string | undefined, opened: boolean): WaitingView {
+function authUrlView(url: string, instructions: string | undefined, opened: boolean, notice: string | undefined): WaitingView {
   const lead = opened
-    ? 'Authorization page opened in your browser — complete the sign-in there.\n'
-      + 'If it did not open, copy the link below and open it by hand.'
-    : `Open this URL to authorize${instructions === undefined ? '' : ` — ${instructions}`}\n`
-      + 'Copy the link below (it is too long to select reliably once wrapped):'
-  return { body: `${lead}\n${url}`, copyLabel: COPY_LINK, copyText: url, reopenUrl: url }
+    ? `${t('oauth-auth-url-opened')}\n${t('oauth-auth-url-opened-fallback')}`
+    : `${t('oauth-auth-url-manual')}\n${t('oauth-auth-url-copy-hint')}`
+  const body = [notice, lead, instructions, url].filter(part => part !== undefined && part !== '').join('\n')
+  return {
+    kind: 'auth_url', body, copyLabel: t('oauth-copy-link'), copyText: url,
+    reopenLabel: t('oauth-open-again'), cancelLabel: t('oauth-cancel'), reopenUrl: url,
+  }
 }
 
 function deviceCodeView(userCode: string, verificationUri: string, opened: boolean): WaitingView {
   const lead = opened
-    ? `Enter this code on the page opened in your browser (${verificationUri}):`
-    : `Visit ${verificationUri} and enter this code:`
-  return { body: `${lead}\n  ${userCode}`, copyLabel: COPY_CODE, copyText: userCode, reopenUrl: verificationUri }
+    ? t('oauth-device-opened', { uri: verificationUri })
+    : t('oauth-device-manual', { uri: verificationUri })
+  return {
+    kind: 'device_code', body: `${lead}\n  ${userCode}`,
+    copyLabel: t('oauth-copy-code'), copyText: userCode,
+    reopenLabel: t('oauth-open-again'), cancelLabel: t('oauth-cancel'), reopenUrl: verificationUri,
+  }
 }
 
 /**
@@ -106,7 +109,12 @@ export class QuestionBridge implements PiAiAuthInteraction {
   readonly signal: AbortSignal
   private readonly openUrl: (url: string) => boolean
   private readonly copy: (text: string) => Promise<boolean>
-  private waiting: { controller: AbortController; answer: Promise<string | undefined> } | undefined
+  private waiting: {
+    controller: AbortController
+    answer: Promise<ReturnType<typeof singleAnswer> | undefined>
+  } | undefined
+  private pendingBrowserView: WaitingView | undefined
+  private notice: string | undefined
   private waitingClosed = false
 
   constructor(
@@ -120,62 +128,134 @@ export class QuestionBridge implements PiAiAuthInteraction {
   }
 
   async prompt(prompt: PiAiAuthPrompt): Promise<string> {
-    const secretNote = prompt.type === 'secret' ? ' (input is not masked on this surface — mind your screen)' : ''
-    const question: AskUserQuestionItem = prompt.type === 'select'
-      ? {
-        id: 'dsh-auth-prompt',
-        header: 'dsh-auth',
-        question: prompt.message,
-        options: prompt.options.map(option => ({
-          label: option.label,
-          ...(option.description === undefined ? {} : { description: option.description }),
-        })),
-      }
-      : {
-        id: 'dsh-auth-prompt',
-        header: 'dsh-auth',
-        question: prompt.message,
-        ...(prompt.placeholder === undefined
-          ? (secretNote === '' ? {} : { detail: secretNote.slice(1) })
-          : { detail: `${prompt.placeholder}${secretNote}` }),
-      }
-    const answer = singleAnswer(await this.ask({ questions: [question], signal: prompt.signal ?? this.signal }))
-    if (prompt.type === 'select') {
-      const label = answer.selected
-      const option = label === undefined ? undefined : prompt.options.find(candidate => candidate.label === label)
-      if (option === undefined) {
-        if (answer.custom !== undefined && answer.custom !== '') return answer.custom
-        throw new Error('dsh-auth: the selection answer did not match an offered option')
-      }
-      return option.id
+    if (this.waitingClosed) throw new Error('Login cancelled')
+    const browserView = prompt.type === 'manual_code' ? this.pendingBrowserView : undefined
+    if (browserView !== undefined) {
+      this.pendingBrowserView = undefined
+      await this.retireWaiting()
     }
-    const custom = answer.custom?.trim()
-    if (custom === undefined || custom === '') throw new Error('dsh-auth: the text answer was empty')
-    return custom
+    // pi-ai's callback race supplies a per-prompt abort signal. It must not
+    // replace the login-wide signal: cancelling either one closes the ask.
+    const signal = prompt.signal === undefined ? this.signal : AbortSignal.any([prompt.signal, this.signal])
+    const secretNote = prompt.type === 'secret' ? t('oauth-secret-unmasked') : ''
+    let actionNote: string | undefined
+    while (true) {
+      if (this.waitingClosed) throw new Error('Login cancelled')
+      signal.throwIfAborted()
+      const question: AskUserQuestionItem = prompt.type === 'select'
+        ? {
+          id: 'dsh-auth-prompt',
+          header: 'dsh-auth',
+          question: prompt.message,
+          options: prompt.options.map(option => ({
+            label: option.label,
+            ...(option.description === undefined ? {} : { description: option.description }),
+          })),
+        }
+        : {
+          id: 'dsh-auth-prompt',
+          header: 'dsh-auth',
+          question: prompt.message,
+          ...(browserView === undefined
+            ? (prompt.placeholder === undefined
+              ? (secretNote === '' ? {} : { detail: secretNote })
+              : { detail: [prompt.placeholder, secretNote].filter(part => part !== '').join('\n') })
+            : {
+              detail: [actionNote, browserView.body].filter(part => part !== undefined).join('\n'),
+              options: [
+                { label: browserView.copyLabel },
+                { label: browserView.reopenLabel },
+                { label: browserView.cancelLabel },
+              ],
+            }),
+        }
+      let answer: ReturnType<typeof singleAnswer>
+      try {
+        answer = singleAnswer(await this.ask({ questions: [question], signal }))
+      } catch (error: unknown) {
+        if (typeof error === 'object' && error !== null
+          && (error as { code?: unknown }).code === 'ASK_CANCELLED') {
+          this.runAbort.abort('user cancelled sign-in')
+        }
+        throw error
+      }
+      signal.throwIfAborted()
+      if (prompt.type === 'select') {
+        const label = answer.selected
+        const option = label === undefined ? undefined : prompt.options.find(candidate => candidate.label === label)
+        if (option === undefined) {
+          if (answer.custom !== undefined && answer.custom !== '') return answer.custom
+          throw new Error('dsh-auth: the selection answer did not match an offered option')
+        }
+        return option.id
+      }
+      // The TUI may attach the focused option label while typing on it;
+      // entered callback text takes precedence over a copy/reopen action.
+      const custom = answer.custom?.trim()
+      if (custom !== undefined && custom !== '') return custom
+      if (browserView === undefined) throw new Error('dsh-auth: the text answer was empty')
+      if (answer.selected === browserView.copyLabel) {
+        const copied = await this.copy(browserView.copyText).catch(() => false)
+        actionNote = t(copied ? 'oauth-copied' : 'oauth-copy-failed')
+        continue
+      }
+      if (answer.selected === browserView.reopenLabel && browserView.reopenUrl !== undefined) {
+        const opened = this.openUrl(browserView.reopenUrl)
+        actionNote = t(opened ? 'oauth-reopened' : 'oauth-open-failed')
+        continue
+      }
+      if (answer.selected === browserView.cancelLabel) {
+        this.runAbort.abort('user cancelled sign-in')
+        throw new Error('Login cancelled')
+      }
+      throw new Error('dsh-auth: the authorization question returned no action or code')
+    }
   }
 
   notify(event: PiAiAuthEvent): void {
+    if (this.waitingClosed || this.signal.aborted) return
+    if (event.type === 'info') {
+      this.notice = event.message
+      return
+    }
     if (event.type === 'auth_url') {
-      if (this.waiting !== undefined) return
+      if (this.pendingBrowserView !== undefined) return
       const opened = this.openUrl(event.url)
-      void this.runWaitingPanel(authUrlView(event.url, event.instructions, opened))
+      const view = authUrlView(event.url, event.instructions, opened, this.notice)
+      this.notice = undefined
+      this.pendingBrowserView = view
+      // Current pi-ai browser flows call manual_code synchronously after
+      // notify. Defer the fallback panel one microtask so that prompt can
+      // consume this view without placing a second ask in the FIFO queue.
+      queueMicrotask(() => {
+        if (this.pendingBrowserView === view && !this.waitingClosed) {
+          void this.runWaitingPanel(view).catch(() => this.runAbort.abort('authorization panel failed'))
+        }
+      })
       return
     }
     if (event.type === 'device_code') {
       if (this.waiting !== undefined) return
       const opened = this.openUrl(event.verificationUri)
       void this.runWaitingPanel(deviceCodeView(event.userCode, event.verificationUri, opened))
+        .catch(() => this.runAbort.abort('authorization panel failed'))
     }
-    // info / progress lines are transient; the waiting panel already tells
-    // the user what to do, and the flow's next prompt carries its own copy.
+    // Progress lines are transient; the flow's next prompt or waiting panel
+    // carries the actionable state.
   }
 
   /** Close the waiting panel (if any) and stop answering for this run. */
   async settle(): Promise<void> {
     this.waitingClosed = true
-    this.waiting?.controller.abort()
-    await this.waiting?.answer
+    this.pendingBrowserView = undefined
+    await this.retireWaiting()
     this.waiting = undefined
+  }
+
+  private async retireWaiting(): Promise<void> {
+    const waiting = this.waiting
+    waiting?.controller.abort()
+    await waiting?.answer
   }
 
   /**
@@ -184,40 +264,49 @@ export class QuestionBridge implements PiAiAuthInteraction {
    */
   private async runWaitingPanel(view: WaitingView): Promise<void> {
     let body = view.body
-    while (!this.waitingClosed) {
+    const active = () => !this.waitingClosed && !this.signal.aborted
+      && (view.kind === 'device_code' || this.pendingBrowserView === view)
+    while (active()) {
       const controller = new AbortController()
       const answer = this.ask({
         questions: [{
           id: 'dsh-auth-waiting',
           header: 'dsh-auth',
-          question: 'Waiting for authorization…',
+          question: t('oauth-waiting'),
           detail: body,
           options: [
             { label: view.copyLabel },
-            ...(view.reopenUrl === undefined ? [] : [{ label: OPEN_AGAIN }]),
-            { label: CANCEL },
+            ...(view.reopenUrl === undefined ? [] : [{ label: view.reopenLabel }]),
+            { label: view.cancelLabel },
           ],
         }],
-        signal: controller.signal,
+        signal: AbortSignal.any([controller.signal, this.signal]),
       })
-        .then(response => singleAnswer(response).selected)
-        .catch(() => undefined)
+        .then(singleAnswer)
+        .catch(() => {
+          if (!controller.signal.aborted && active()) this.runAbort.abort('authorization panel was dismissed')
+          return undefined
+        })
       this.waiting = { controller, answer }
-      const picked = await answer
-      this.waiting = undefined
-      if (picked === undefined || this.waitingClosed) return
-      if (picked === CANCEL) {
+      const response = await answer
+      if (this.waiting?.controller === controller) this.waiting = undefined
+      if (response === undefined || !active()) return
+      if (response.selected === undefined) {
+        body = `${t('oauth-choose-action')}\n${view.body}`
+        continue
+      }
+      if (response.selected === view.cancelLabel) {
         this.runAbort.abort('user cancelled sign-in')
         return
       }
-      if (picked === view.copyLabel) {
-        const copied = await this.copy(view.copyText)
-        body = `${copied ? 'Copied — paste it where you need it.' : 'Copy failed — no clipboard helper answered; select the text manually.'}\n${view.body}`
+      if (response.selected === view.copyLabel) {
+        const copied = await this.copy(view.copyText).catch(() => false)
+        body = `${t(copied ? 'oauth-copied' : 'oauth-copy-failed')}\n${view.body}`
         continue
       }
-      if (picked === OPEN_AGAIN && view.reopenUrl !== undefined) {
-        this.openUrl(view.reopenUrl)
-        body = `Reopened in your browser.\n${view.body}`
+      if (response.selected === view.reopenLabel && view.reopenUrl !== undefined) {
+        const opened = this.openUrl(view.reopenUrl)
+        body = `${t(opened ? 'oauth-reopened' : 'oauth-open-failed')}\n${view.body}`
       }
     }
   }

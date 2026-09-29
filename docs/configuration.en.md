@@ -304,15 +304,22 @@ Where it writes:
 
 The standard profile's `dsh-tui-auth` row loads this package's `./oauth`
 entry; it **no longer depends on a separate `dsh-auth` plugin package**.
-The `/provider` add branch signs in to ChatGPT (`openai-codex`), Claude
-(`anthropic`), or Grok (`xai`) subscriptions. `/auth status`,
-`/auth login [provider]`, and `/auth logout <provider>` use the same credential
-store. Authorization runs through a browser or device-code flow and tries to
-open the page automatically; a host without an interactive question surface
-refuses sign-in explicitly.
+The `/provider` add branch signs in to ChatGPT/Codex (`openai-codex`), Claude
+(`anthropic`), or Grok (`xai`) subscriptions. When the installed host's pi-ai
+ships the newer flows (0.87.1+), it also offers OpenAI direct ChatGPT sign-in
+(`openai`, using the OpenAI API rather than the legacy Codex backend) and Meta
+Muse (`meta`). The validated DSH `0.2.0-rc.1` fixture still carries pi-ai
+`0.85.1`, so it keeps the original three until the host dependency is updated.
+`/auth status`, `/auth login [provider]`, and `/auth logout <provider>` share
+that credential store. Browser authorization tries to open the page
+automatically and offers the authorization link and manual callback URL/code
+input on one question;
+device-code flows show a copyable code while polling. A host without an
+interactive question surface refuses sign-in explicitly.
 
-The `dsh-tui-auth` row accepts `providers` (default: all three; a non-empty
-subset), `credentialsFile` (custom file path), and
+The `dsh-tui-auth` row accepts `providers` (default: all supported flows present
+in the installed pi-ai catalog; an explicit non-empty subset must exist in
+that catalog), `credentialsFile` (custom file path), and
 `modelOverrides.<provider>.<model>` (optional `contextWindow` and `maxTokens`).
 A profile override replaces the whole `config` block, so retain every field
 you need. The flow implementation comes from the host's `dsh-llm-pi-ai` / pi-ai
@@ -325,10 +332,11 @@ The default credential file remains `$DSH_HOME/dsh-auth/credentials.json`
 re-login. The `ctx.dshAuth` service name and `dsh-auth` log prefix remain for
 compatibility; they do not imply a separate installed package. The file
 contains long-lived refresh tokens; directory/file modes are best-effort
-0700/0600, and status surfaces show only sign-in and expiry
-metadata. Models appear in the picker after sign-in. If another `llm-pi-ai`
-profile already owns the same provider route, the OAuth route refuses the
-duplicate registration.
+0700/0600. OpenAI direct login lazily creates a stable UUID in a sibling
+`device-id` file (0600); pi-ai uses it as the installation's agent-host ID.
+Status surfaces show only sign-in and expiry metadata. Models appear in the
+picker after sign-in. If another `llm-pi-ai` profile already owns the same
+provider route, the OAuth route refuses duplicate registration.
 
 ## Composition constraints
 

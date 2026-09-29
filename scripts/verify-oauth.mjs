@@ -5,32 +5,37 @@
  * Covers: the credential file as a pi-ai `CredentialStore` (write/read/
  * modify/delete, list metadata, the serialized modify pi-ai's refresh-under-
  * lock depends on, loud corrupt-file refusal, loud refusal of non-OAuth
- * writes), the mounted profiles (catalog identity, OAuth flow present,
- * adapter-facing defaults), the question bridge (select/text mapping,
- * waiting-panel single-flight, cancel wiring), and the service api (status/
- * login/logout over a fabricated flow), plus the public ./oauth entry's
+ * writes, stable OpenAI device ID), the mounted profiles (catalog identity,
+ * runtime-gated OAuth flow presence, adapter-facing defaults), the question
+ * bridge (select/text mapping, browser callback/manual-input single surface,
+ * waiting-panel cancel wiring), and the service api (status/login/logout
+ * over a fabricated flow), plus the public ./oauth entry's
  * route/command/service mount and lifecycle cleanup.
  *
  * Run after build: `pnpm verify:oauth`.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { settled } from './lib/term-test.mjs'
 
+process.env.DSH_TUI_LANG = 'en'
 const oauthModule = await import('../lib/types/oauth.js')
 const {
   CredentialFile,
   defaultCredentialsFile,
   buildOAuthProfile,
   OAUTH_PROVIDER_IDS,
+  availableOAuthProviderIds,
   QuestionBridge,
   createDshAuthApi,
   openerFor,
   CredentialGatedAdapter,
 } = oauthModule
 const { Context } = await import('@deepseek-ai/cordis')
+const { QuestionStore } = await import('../lib/types/dsh-adapter/questions.js')
+const { setLang } = await import('../lib/types/i18n.js')
 
 /** Adapter options over one profile — enough for listModels/resolveModel offline. */
 function gateAdapterOptions() {
@@ -128,6 +133,38 @@ try {
   }
   ok(corruptRefused, 'corrupt file refuses loudly instead of acting empty')
 
+  // pi-ai 0.87.1's OpenAI OAuth registration needs a stable installation UUID.
+  // It lives beside, not inside, the versioned credential document and survives
+  // process restarts and logout. The callback is lazy for older login flows.
+  const deviceId = store.getOrCreateDeviceId()
+  const deviceIdPath = join(root, 'creds', 'device-id')
+  ok(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(deviceId), 'OpenAI agent-host ID is a UUID')
+  ok(readFileSync(deviceIdPath, 'utf8').trim() === deviceId
+    && new CredentialFile(store.path).getOrCreateDeviceId() === deviceId,
+  'device ID persists independently of a CredentialFile instance')
+  if (process.platform !== 'win32') {
+    ok((statSync(deviceIdPath).mode & 0o777) === 0o600, 'new device ID file is mode 0600')
+  }
+  const invalidDeviceStore = new CredentialFile(join(root, 'invalid-device', 'credentials.json'))
+  mkdirSync(join(root, 'invalid-device'))
+  writeFileSync(join(root, 'invalid-device', 'device-id'), 'not-a-uuid\n', { mode: 0o600 })
+  let invalidDeviceRefused = false
+  try {
+    invalidDeviceStore.getOrCreateDeviceId()
+  } catch (error) {
+    invalidDeviceRefused = error.message.includes('not a UUID')
+  }
+  ok(invalidDeviceRefused, 'corrupt device ID is refused instead of silently rotated')
+
+  const directToken = {
+    type: 'oauth', access: 'direct-access', refresh: 'direct-refresh', expires: Date.now() + 3_600_000,
+    clientId: 'oaiapp_issued', scopes: ['chatgpt.tokens.use.direct'],
+  }
+  await store.modify('openai', async () => directToken)
+  ok((await store.read('openai'))?.clientId === 'oaiapp_issued'
+    && (await new CredentialFile(store.path).read('openai'))?.scopes?.[0] === 'chatgpt.tokens.use.direct',
+  'new OpenAI OAuth client ID and scopes survive credential round-trip')
+
   // ── profiles ─────────────────────────────────────────────────────────────
   console.log('profiles')
   const profile = buildOAuthProfile('openai-codex')
@@ -135,7 +172,23 @@ try {
   ok(profile.piProvider.auth.oauth !== undefined, 'the provider keeps its OAuth flow object')
   ok(typeof profile.piProvider.auth.oauth?.name === 'string', 'the flow carries a display name')
   ok(profile.maxRequestImageBytes === 20 * 1024 * 1024, 'image budgets mirror llm-pi-ai defaults')
-  ok(OAUTH_PROVIDER_IDS.length === 3, `mounted provider set is the expected trio (got ${OAUTH_PROVIDER_IDS.join(',')})`)
+  ok(JSON.stringify(OAUTH_PROVIDER_IDS) === JSON.stringify(['openai', 'openai-codex', 'anthropic', 'xai', 'meta']),
+    `allow-list includes the new pi-ai subscription routes (got ${OAUTH_PROVIDER_IDS.join(',')})`)
+  const available = availableOAuthProviderIds()
+  ok(available.includes('openai-codex') && available.includes('anthropic') && available.includes('xai')
+    && available.every(id => OAUTH_PROVIDER_IDS.includes(id)),
+  `defaults follow the installed adapter's OAuth catalog (got ${available.join(',')})`)
+  ok(available.every(id => buildOAuthProfile(id).piProvider.auth.oauth !== undefined),
+    'every default route actually has an OAuth flow')
+  if (!available.includes('openai')) {
+    let missingOpenAIFlow = ''
+    try {
+      buildOAuthProfile('openai')
+    } catch (error) {
+      missingOpenAIFlow = error.message
+    }
+    ok(missingOpenAIFlow.includes('ships no OAuth flow'), 'explicit new OpenAI route refuses an older pi-ai catalog at boot')
+  }
   let unknownProvider = ''
   try {
     buildOAuthProfile('openrouter')
@@ -274,6 +327,128 @@ try {
     'failed open degrades to copy guidance')
   await qb3.settle()
 
+  // pi-ai 0.87.1 races a loopback callback against a manual_code prompt.
+  // The real FIFO QuestionStore must expose that paste input immediately,
+  // not park it behind the auth_url waiting panel.
+  const browserStore = new QuestionStore()
+  const browserSnapshots = []
+  browserStore.subscribe(() => {
+    const id = browserStore.getSnapshot()?.question.id
+    if (id !== undefined) browserSnapshots.push(id)
+  })
+  const browserAbort = new AbortController()
+  const browserBridge = new QuestionBridge(request => browserStore.ask(request), browserAbort, helpers)
+  browserBridge.notify({ type: 'info', message: 'Could not listen on the callback port; paste the redirect URL.' })
+  browserBridge.notify({ type: 'auth_url', url: longUrl, instructions: 'Paste the final redirect URL if needed.' })
+  const manual = browserBridge.prompt({ type: 'manual_code', message: 'Complete login or paste the redirect URL:' })
+  ok(await settled(() => browserStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+    'browser OAuth exposes the manual-code question immediately')
+  const browserQuestion = browserStore.getSnapshot()?.question
+  ok(!browserSnapshots.includes('dsh-auth-waiting')
+    && browserQuestion?.detail?.includes('Could not listen on the callback port')
+    && browserQuestion?.detail?.includes(longUrl)
+    && browserQuestion?.options?.some(option => option.label === 'Copy authorization link'),
+  'one question carries the callback paste field, complete URL, copy action, and pi-ai info event')
+  const copiedBefore = copiedTexts.length
+  browserStore.answerCurrent({ selected: ['Copy authorization link'] })
+  ok(await settled(() => copiedTexts.length === copiedBefore + 1
+    && browserStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+  'copy action reopens the same manual-code question instead of stranding it')
+  const callbackUrl = 'http://localhost:1455/auth/callback?code=manual&state=s1'
+  // Typing on the focused copy row attaches its label; custom input must win.
+  browserStore.answerCurrent({ selected: ['Copy authorization link'], custom: callbackUrl })
+  ok(await manual === callbackUrl && browserStore.getSnapshot() === null,
+    'a pasted callback URL resolves the pi-ai prompt despite an attached action label')
+  await browserBridge.settle()
+
+  const delayedStore = new QuestionStore()
+  const delayedBridge = new QuestionBridge(request => delayedStore.ask(request), new AbortController(), helpers)
+  delayedBridge.notify({ type: 'auth_url', url: longUrl })
+  ok(await settled(() => delayedStore.getSnapshot()?.question.id === 'dsh-auth-waiting'),
+    'browser flow without an immediate manual prompt retains a waiting panel')
+  const delayedManual = delayedBridge.prompt({ type: 'manual_code', message: 'Paste code:' })
+  ok(await settled(() => delayedStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+    'a later manual prompt retires the fallback waiting panel')
+  delayedStore.answerCurrent({ selected: [], custom: 'later-code' })
+  ok(await delayedManual === 'later-code', 'delayed manual prompt remains answerable')
+  await delayedBridge.settle()
+
+  const callbackStore = new QuestionStore()
+  const callbackAbort = new AbortController()
+  const callbackBridge = new QuestionBridge(request => callbackStore.ask(request), new AbortController(), helpers)
+  callbackBridge.notify({ type: 'auth_url', url: longUrl })
+  const callbackManual = callbackBridge.prompt({ type: 'manual_code', message: 'Paste code:', signal: callbackAbort.signal })
+  ok(await settled(() => callbackStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+    'callback race has a live manual prompt before callback completion')
+  callbackAbort.abort()
+  let callbackPromptAborted = false
+  try {
+    await callbackManual
+  } catch {
+    callbackPromptAborted = true
+  }
+  ok(callbackPromptAborted && callbackStore.getSnapshot() === null,
+    'callback winning aborts only its manual prompt and retires the question')
+  await callbackBridge.settle()
+
+  const externalStore = new QuestionStore()
+  const externalAbort = new AbortController()
+  const externalBridge = new QuestionBridge(request => externalStore.ask(request), externalAbort, helpers)
+  externalBridge.notify({ type: 'auth_url', url: longUrl })
+  const externalManual = externalBridge.prompt({
+    type: 'manual_code', message: 'Paste code:', signal: new AbortController().signal,
+  })
+  ok(await settled(() => externalStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+    'manual prompt with its own signal is active before whole-login cancellation')
+  externalAbort.abort('external cancellation')
+  let externalCancelled = false
+  try {
+    await externalManual
+  } catch {
+    externalCancelled = true
+  }
+  ok(externalCancelled && externalStore.getSnapshot() === null,
+    'whole-login abort still closes a manual prompt carrying a separate pi-ai signal')
+  await externalBridge.settle()
+
+  const cancelStore = new QuestionStore()
+  const cancelAbort = new AbortController()
+  const cancelBridge = new QuestionBridge(request => cancelStore.ask(request), cancelAbort, helpers)
+  cancelBridge.notify({ type: 'auth_url', url: longUrl })
+  const cancelledManual = cancelBridge.prompt({ type: 'manual_code', message: 'Paste code:' })
+  ok(await settled(() => cancelStore.getSnapshot()?.question.id === 'dsh-auth-prompt'),
+    'manual callback question is active before user cancellation')
+  cancelStore.cancelCurrent()
+  let manualCancelled = false
+  try {
+    await cancelledManual
+  } catch {
+    manualCancelled = true
+  }
+  ok(manualCancelled && cancelAbort.signal.aborted && cancelStore.getSnapshot() === null,
+    'Esc on the manual callback question aborts the whole OAuth run')
+  await cancelBridge.settle()
+
+  const dismissStore = new QuestionStore()
+  const dismissAbort = new AbortController()
+  const dismissBridge = new QuestionBridge(request => dismissStore.ask(request), dismissAbort, helpers)
+  dismissBridge.notify({ type: 'device_code', userCode: 'ABCD-1234', verificationUri: 'https://auth.example/device' })
+  ok(await settled(() => dismissStore.getSnapshot()?.question.id === 'dsh-auth-waiting'),
+    'device authorization shows its waiting panel')
+  dismissStore.cancelCurrent()
+  ok(await settled(() => dismissAbort.signal.aborted && dismissStore.getSnapshot() === null),
+    'dismissing the device-code question cancels the login instead of polling without UI')
+  await dismissBridge.settle()
+
+  setLang('zh')
+  const zhStore = new QuestionStore()
+  const zhBridge = new QuestionBridge(request => zhStore.ask(request), new AbortController(), helpers)
+  zhBridge.notify({ type: 'device_code', userCode: 'ABCD-1234', verificationUri: 'https://auth.example/device' })
+  ok(await settled(() => zhStore.getSnapshot()?.question.options?.some(option => option.label === '复制代码')),
+    'bridge-owned OAuth actions use the active Chinese locale')
+  await zhBridge.settle()
+  setLang('en')
+
   // ── opener argv shape ────────────────────────────────────────────────────
   console.log('opener argv')
   const authorizeLikeUrl = 'https://auth.openai.com/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=s1'
@@ -303,6 +478,7 @@ try {
   // ── service api ──────────────────────────────────────────────────────────
   console.log('service api')
   const apiStore = new CredentialFile(join(root, 'api', 'credentials.json'))
+  let loginDeviceId
   const fakeProvider = {
     id: 'fake',
     name: 'Fake Provider',
@@ -310,8 +486,12 @@ try {
       oauth: {
         name: 'Fake (subscription)',
         loginLabel: 'Sign in with Fake',
-        async login() {
-          return { type: 'oauth', access: 'a', refresh: 'r', expires: Date.now() + 3_600_000 }
+        async login(_interaction, options) {
+          loginDeviceId = options?.getDeviceId?.()
+          return {
+            type: 'oauth', access: 'a', refresh: 'r', expires: Date.now() + 3_600_000,
+            clientId: 'oaiapp_issued', scopes: ['chatgpt.tokens.use.direct'],
+          }
         },
         async refresh(credential) {
           return credential
@@ -332,8 +512,31 @@ try {
   ok((await api.providers())[0].signedIn === false, 'status reports unsigned providers')
   const login = await api.login('fake')
   ok(login.oauthLabel === 'Fake (subscription)' && (await apiStore.read('fake'))?.access === 'a', 'login runs the flow and persists the credential')
+  ok(loginDeviceId === apiStore.getOrCreateDeviceId()
+    && (await apiStore.read('fake'))?.clientId === 'oaiapp_issued',
+  'service passes pi-ai 0.87.1 login options and preserves flow-specific credential fields')
   ok((await api.providers())[0].signedIn === true, 'status reports the signed-in provider')
   ok(await api.logout('fake'), 'logout removes the credential')
+  ok(readFileSync(join(root, 'api', 'device-id'), 'utf8').trim() === loginDeviceId,
+    'logout leaves the stable OpenAI installation ID intact')
+  const legacyStore = new CredentialFile(join(root, 'legacy-api', 'credentials.json'))
+  const legacyProfile = {
+    ...fakeProfile,
+    piProvider: {
+      ...fakeProvider,
+      auth: { oauth: {
+        ...fakeProvider.auth.oauth,
+        async login() { return { type: 'oauth', access: 'old', refresh: 'old-r', expires: Date.now() + 3_600_000 } },
+      } },
+    },
+  }
+  const legacyApi = createDshAuthApi({
+    profiles: new Map([['fake', legacyProfile]]), store: legacyStore,
+    resolveAsk: () => fakeAsk, logger: { warn() {} },
+  })
+  await legacyApi.login('fake')
+  ok(!existsSync(join(root, 'legacy-api', 'device-id')),
+    'older one-argument pi-ai flows ignore the new login context without creating an ID')
   let unknownLogin = ''
   try {
     await api.login('nobody')
@@ -383,6 +586,13 @@ try {
     await fiber.dispose()
     ok(released.length === 2 && released.includes('llm') && released.includes('commands'),
       'Cordis teardown unregisters both the route and /auth')
+    const previousRoutes = registeredRoutes.length
+    const defaultFiber = await ctx.plugin(oauthModule, {
+      credentialsFile: join(root, 'mount-default', 'credentials.json'),
+    })
+    ok(JSON.stringify(registeredRoutes.slice(previousRoutes).map(route => route.ids[0])) === JSON.stringify(available),
+      'omitted providers config mounts exactly the installed pi-ai OAuth flows')
+    await defaultFiber.dispose()
   } finally {
     await ctx.fiber.dispose()
   }

@@ -409,9 +409,9 @@
       name: '@deepseek-ai/dsh-cordis-host-runner'
       disabled: !!js "[...ctx.loader.entries()].some(entry => entry.options.id === 'cordis-host-runner' && entry.options.name === '@deepseek-ai/dsh-cordis-host-runner' && !entry.disabled)"
 
-    # Built-in subscription OAuth sign-in: mounts the
-    # ChatGPT/Codex, Claude Pro/Max and SuperGrok provider routes plus the
-    # /auth command; the TUI's /provider wizard gains its OAuth branch from
+    # Built-in subscription OAuth sign-in: mounts available pi-ai routes
+    # (ChatGPT/Codex, Claude, Grok; newer pi-ai adds OpenAI direct and Meta)
+    # plus the /auth command; the TUI's /provider wizard gains its OAuth branch from
     # the ctx.dshAuth service this row provides. Entry-level inject only —
     # the internal module's own inject is empty so a stale patch cannot
     # deadlock a composition lacking these services (#183 pattern).

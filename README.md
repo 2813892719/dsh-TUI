@@ -35,7 +35,7 @@
 - **Session workflow** — `/new` `/compact` `/export` `/btw`, model hot-switch, fork, rewind, vim, fullscreen draft editor.
 - **IDE selection channel** — a VS Code selection lands in the prompt.
 - **DSH integrations** — presets, skills, MCP, goals, todos, subagents, questionnaires.
-- **Subscription sign-in** — the standard profile includes built-in OAuth for ChatGPT, Claude, and Grok; use `/provider` or `/auth` without installing another plugin.
+- **Subscription sign-in** — the standard profile mounts available pi-ai OAuth routes for ChatGPT/Codex, Claude, and Grok; newer hosts also add OpenAI direct and Meta Muse. Use `/provider` or `/auth` without another plugin.
 - **Extensions** — browser interaction, computer use and more.
 - **Built for long sessions** — event-driven projection, virtualization, bounded caches.
 

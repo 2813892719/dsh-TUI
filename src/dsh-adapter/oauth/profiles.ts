@@ -18,11 +18,17 @@ import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { adapterBuiltinProviders, type PiAiProvider } from './pi-ai.js'
 
-/** Provider routes this build mounts, in picker order. */
-export const OAUTH_PROVIDER_IDS = ['openai-codex', 'anthropic', 'xai'] as const
+/** Subscription routes this build can mount, in picker order. */
+export const OAUTH_PROVIDER_IDS = ['openai', 'openai-codex', 'anthropic', 'xai', 'meta'] as const
 
 /** One routable provider id. */
 export type OAuthProviderId = (typeof OAUTH_PROVIDER_IDS)[number]
+
+/** Mount only flows actually shipped by the adapter's pi-ai instance. */
+export function availableOAuthProviderIds(): OAuthProviderId[] {
+  const catalog = new Map(adapterBuiltinProviders().map(provider => [provider.id, provider] as const))
+  return OAUTH_PROVIDER_IDS.filter(id => catalog.get(id)?.auth.oauth !== undefined)
+}
 
 /**
  * One per-model catalog override a deployment may name, keyed by model id.
@@ -117,6 +123,9 @@ export function buildOAuthProfile(
     throw new Error(`dsh-auth: "${id}" is not an OAuth provider this build mounts (${OAUTH_PROVIDER_IDS.join(', ')})`)
   }
   const catalog = withModelOverrides(catalogProviderOf(id), modelOverrides)
+  // An older pi-ai catalog can know the route but not its newer OAuth flow
+  // (notably `openai`). Explicit requests must fail at boot, not at /auth.
+  oauthOf(catalog)
   return {
     provider: id,
     displayName: catalog.name,

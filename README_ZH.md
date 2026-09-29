@@ -34,7 +34,7 @@
 - **会话工作流** — `/new` `/compact` `/export` `/btw`、模型热切换、fork、回溯、vim、全屏草稿编辑器。
 - **IDE 选区通道** — VS Code 里选中的代码进 prompt。
 - **DSH 集成** — presets、技能、MCP、目标、待办、子代理、问卷。
-- **订阅账号登录** — 标准 profile 内置 ChatGPT、Claude、Grok 的 OAuth；通过 `/provider` 或 `/auth` 使用，无需另装插件。
+- **订阅账号登录** — 标准 profile 挂载 pi-ai 可用的 ChatGPT/Codex、Claude、Grok OAuth；较新宿主还支持 OpenAI 直连与 Meta Muse。通过 `/provider` 或 `/auth` 使用，无需另装插件。
 - **扩展** — 浏览器交互、computer use 等。
 - **为长会话设计** — 事件驱动投影、虚拟化、有界缓存。
 

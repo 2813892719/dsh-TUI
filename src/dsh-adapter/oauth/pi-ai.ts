@@ -31,6 +31,23 @@ export type PiAiAuthInteraction = Parameters<PiAiOAuth['login']>[0]
 export type PiAiAuthPrompt = Parameters<PiAiAuthInteraction['prompt']>[0]
 export type PiAiAuthEvent = Parameters<PiAiAuthInteraction['notify']>[0]
 
+/** pi-ai 0.87.1 added this optional login context; older flows ignore it. */
+export interface PiAiLoginOptions {
+  getDeviceId?: () => string
+}
+
+/** Keep the optional second argument compatible with older adapter typings. */
+export function loginOAuth(
+  oauth: PiAiOAuth,
+  interaction: PiAiAuthInteraction,
+  options: PiAiLoginOptions,
+): ReturnType<PiAiOAuth['login']> {
+  const compatible = oauth as PiAiOAuth & {
+    login(interaction: PiAiAuthInteraction, options?: PiAiLoginOptions): ReturnType<PiAiOAuth['login']>
+  }
+  return compatible.login(interaction, options)
+}
+
 interface ProviderCatalogModule {
   builtinProviders(): readonly PiAiProvider[]
 }

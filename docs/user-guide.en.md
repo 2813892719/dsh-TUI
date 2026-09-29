@@ -281,8 +281,8 @@ The command menu = built-in commands (50) + DSH registry commands (`/plan` `/goa
 
 | Command | Args | Effect |
 |---|---|---|
-| `/provider` | none | interactive model-provider wizard (add / edit / delete; the standard profile includes **OAuth subscription sign-in** for ChatGPT / Claude / Grok, no API key) |
-| `/auth` | `status` / `login [provider]` / `logout <provider>` | built-in subscription OAuth: inspect status, sign in, or remove local credentials (`openai-codex` / `anthropic` / `xai`) |
+| `/provider` | none | interactive model-provider wizard (add / edit / delete; the standard profile includes **OAuth subscription sign-in** for ChatGPT/Codex / Claude / Grok, plus OpenAI direct / Meta Muse when the host pi-ai supports them) |
+| `/auth` | `status` / `login [provider]` / `logout <provider>` | built-in subscription OAuth: inspect status, sign in, or remove local credentials (`openai-codex` / `anthropic` / `xai`; newer pi-ai also `openai` / `meta`) |
 | `/login` | none | credential status (source, store writability, base URL; subscription accounts are listed when the OAuth module is mounted) |
 | `/logout` | none | logout notes (env source: delete the variable and restart) |
 | `/permission` | none / `<preset>` / `status` | view/switch permission preset and policy (no arg opens the selector) |
@@ -399,7 +399,7 @@ Keys are in §2.7. Key points:
 - `dsh-tui <路径>` also accepts a workspace target.
 - `/doctor` check: Node/platform, API key, model routing, cwd, context window, session storage, plugin host.
 - `/provider` interactive wizard to manage model providers: add / edit / delete.
-  - The standard profile's built-in OAuth module offers **subscription sign-in** (ChatGPT / Claude / Grok, no API key); `/auth login <provider>` also signs in, and `/auth logout <provider>` removes the stored OAuth credential.
+  - The standard profile's built-in OAuth module offers **subscription sign-in** (ChatGPT/Codex / Claude / Grok; OpenAI direct / Meta Muse on newer pi-ai, no API key); `/auth login <provider>` also signs in, and `/auth logout <provider>` removes the stored OAuth credential.
 - Non-env-variable API keys are written to `~/.dsh/.credentials.yaml` (0600), and the UI shows only `••••••`; OAuth credentials instead live in `$DSH_HOME/dsh-auth/credentials.json` (`~/.dsh/dsh-auth/credentials.json` when DSH_HOME is unset).
   - Custom endpoints need route name, API key, baseURL, and protocol (`openai-completions` / `openai-responses` /
   `anthropic-messages`).

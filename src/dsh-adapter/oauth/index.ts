@@ -1,10 +1,11 @@
 /**
  * Built-in subscription OAuth sign-in as LLM provider routes.
  *
- * One internal Cordis module mounts the pi-ai catalog providers that ship OAuth flows
- * (ChatGPT/Codex, Claude Pro/Max, SuperGrok) as `llm` registry routes, so
- * their models appear in every model picker the moment the plugin loads —
- * signing in is the only missing credential. `PiAiAdapter` runs with this
+ * One internal Cordis module mounts supported subscription routes from the
+ * installed pi-ai catalog (ChatGPT/Codex, Claude, Grok, and newer flows when
+ * available) as `llm` registry routes. Signed-in models appear in model
+ * pickers; unsigned routes remain addressable for saved sessions.
+ * `PiAiAdapter` runs with this
  * module's file-backed pi-ai `CredentialStore` injected
  * (`PiAiAuthInjection`): requests resolve the stored OAuth credential through
  * the provider's own auth and rotate refresh tokens under the store's lock.
@@ -16,7 +17,8 @@
  *   name: '@deepseek-harness-tui/dsh-tui/oauth'
  *   inject: [llm, commands]
  *   config:
- *     providers: [openai-codex, anthropic, xai]   # subset of the mounted set
+ *     # providers: [openai-codex, anthropic, xai]  # optional catalog subset;
+ *     # newer pi-ai also offers openai and meta
  *     # credentialsFile: /secure/path/credentials.json   # default $DSH_HOME/dsh-auth/
  *     # Per-provider catalog overrides, keyed by provider id then model id:
  *     # any optional field keeps the installed catalog's value. The example
@@ -45,7 +47,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiAdapterOptions } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CredentialFile, defaultCredentialsFile } from './credentials.js'
-import { buildOAuthProfile, OAUTH_PROVIDER_IDS, type ModelOverride } from './profiles.js'
+import { availableOAuthProviderIds, buildOAuthProfile, OAUTH_PROVIDER_IDS, type ModelOverride } from './profiles.js'
 import { createDshAuthApi, DshAuthService } from './service.js'
 import { createAuthCommandHandler } from './command.js'
 import type { PiAiAuthContext } from './pi-ai.js'
@@ -77,7 +79,7 @@ interface CommandsLike {
 
 /** Plugin configuration. */
 export interface Config {
-  /** Provider routes to mount; every entry must ship an OAuth flow in the installed pi-ai catalog. */
+  /** Provider routes to mount; omitted means every supported flow in the installed pi-ai catalog. */
   providers?: string[]
   /** Credential file override; default `$DSH_HOME/dsh-auth/credentials.json`. */
   credentialsFile?: string
@@ -96,7 +98,7 @@ const modelOverride = z.object({
 })
 
 export const Config: z<Config> = z.object({
-  providers: z.array(z.string()).default([...OAUTH_PROVIDER_IDS]),
+  providers: z.array(z.string()).default(availableOAuthProviderIds()),
   credentialsFile: z.string(),
   modelOverrides: z.dict(z.dict(modelOverride)),
 })
@@ -107,7 +109,7 @@ export { QuestionBridge, describeEvent } from './interaction.js'
 export type { AskFn, QuestionBridgeHelpers } from './interaction.js'
 export { copyToClipboard, openInBrowser, openerFor } from './opener.js'
 export { CredentialFile, defaultCredentialsFile } from './credentials.js'
-export { OAUTH_PROVIDER_IDS, buildOAuthProfile, type ModelOverride } from './profiles.js'
+export { OAUTH_PROVIDER_IDS, availableOAuthProviderIds, buildOAuthProfile, type ModelOverride } from './profiles.js'
 
 /**
  * The ambient auth context providers may consult while resolving their own
@@ -155,7 +157,7 @@ export class CredentialGatedAdapter extends PiAiAdapter {
 
 /** Mount the routes, the service, and the command. */
 export function apply(ctx: Context, config: Config): void {
-  const configured = config.providers ?? [...OAUTH_PROVIDER_IDS]
+  const configured = config.providers ?? availableOAuthProviderIds()
   const unknown = configured.filter(id => !(OAUTH_PROVIDER_IDS as readonly string[]).includes(id))
   if (unknown.length > 0 || configured.length === 0) {
     throw new Error(

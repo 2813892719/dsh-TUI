@@ -266,13 +266,17 @@ Profile 模式不再使用旧的 `DSH_TUI_COMPACT_RATIO`、`DSH_TUI_COMPACT_RETA
 ### 内置订阅 OAuth
 
 标准 profile 的 `dsh-tui-auth` 行加载本包的 `./oauth` 入口，**不再依赖独立的
-`dsh-auth` 插件包**。`/provider` 的添加分支提供 ChatGPT（`openai-codex`）、Claude
-（`anthropic`）、Grok（`xai`）订阅账号登录；`/auth status`、`/auth login [provider]`、
-`/auth logout <provider>` 操作同一套凭据。登录时通过浏览器或设备码完成授权，授权页
-会尝试自动打开；无交互问卷服务的宿主会明确拒绝登录。
+`dsh-auth` 插件包**。`/provider` 的添加分支提供 ChatGPT/Codex（`openai-codex`）、
+Claude（`anthropic`）、Grok（`xai`）订阅账号登录。宿主 pi-ai 提供新流程（0.87.1+）
+时还可使用 OpenAI 直连 ChatGPT 登录（`openai`，使用 OpenAI API 而非旧版 Codex
+后端）和 Meta Muse（`meta`）。当前主验证线 DSH `0.2.0-rc.1` 仍携带 pi-ai
+`0.85.1`，宿主依赖升级前默认保持原有三个路由。`/auth status`、`/auth login [provider]`、
+`/auth logout <provider>` 操作同一套凭据。浏览器授权会尝试自动打开页面，并在同一
+问卷中提供授权链接与手动粘贴回调 URL/代码的输入；设备码流程在轮询期间显示可复制的
+短码。无交互问卷服务的宿主会明确拒绝登录。
 
-`dsh-tui-auth` 行可配置 `providers`（默认全部三个，必须是非空子集）、
-`credentialsFile`（自定义凭据文件）和
+`dsh-tui-auth` 行可配置 `providers`（默认安装版 pi-ai catalog 中所有受支持的流程；
+显式指定时必须是其中的非空子集）、`credentialsFile`（自定义凭据文件）和
 `modelOverrides.<provider>.<model>`（可选的 `contextWindow`、`maxTokens`）。
 profile 覆盖的 `config` 是整段替换，覆盖时保留所需的每个字段。OAuth 流程使用宿主
 `dsh-llm-pi-ai` 所带的 pi-ai 实现；这不是通用 API key 登录，订阅账号只走相应的
@@ -282,8 +286,10 @@ profile 覆盖的 `config` 是整段替换，覆盖时保留所需的每个字�
 `~/.dsh/dsh-auth/credentials.json`），也可用 `DSH_AUTH_CREDENTIALS` 覆盖；旧版登录
 无需迁移或重新登录。服务名 `ctx.dshAuth`、日志前缀 `dsh-auth` 也为兼容保留，
 不代表仍需安装独立包。文件保存长期 refresh token，目录/文件尽力使用 0700/0600，
-状态界面只展示登录与到期信息。登录后模型才出现在选择器中；同一 provider 若已由
-`llm-pi-ai` 其他配置占用，OAuth 路由会拒绝重复注册。
+OpenAI 直连登录会按需在凭据文件同目录创建持久 UUID 文件 `device-id`（0600），供
+pi-ai 作为当前安装的 agent-host ID。状态界面只展示登录与到期信息。登录后，模型才
+出现在选择器中；同一 provider 若已由 `llm-pi-ai` 其他配置占用，OAuth 路由会拒绝
+重复注册。
 
 ## 组合约束
 

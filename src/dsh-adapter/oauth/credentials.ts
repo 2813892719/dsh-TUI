@@ -14,6 +14,7 @@
  * @module @deepseek-harness-tui/dsh-tui/oauth/credentials
  */
 
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -47,6 +48,7 @@ export function defaultCredentialsFile(): string {
 }
 
 const EMPTY_DOCUMENT: CredentialsDocument = { version: 1, providers: {} }
+const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 
 /**
  * The credential file. IO failures throw (loud, naming the path) rather than
@@ -59,9 +61,44 @@ export class CredentialFile implements PiAiCredentialStore {
   /** Per-provider operation chains: modify/delete never overlap for one id. */
   private readonly chains = new Map<string, Promise<unknown>>()
   private cache: CredentialsDocument | undefined
+  private deviceId: string | undefined
 
   constructor(path: string) {
     this.path = path
+  }
+
+  /** Stable per-store UUID for pi-ai's OpenAI ChatGPT agent-host identity. */
+  getOrCreateDeviceId(): string {
+    if (this.deviceId !== undefined) return this.deviceId
+    const path = join(dirname(this.path), 'device-id')
+    let value: string
+    try {
+      value = readFileSync(path, 'utf8')
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException | undefined)?.code !== 'ENOENT') {
+        throw new Error(`dsh-auth: cannot read device ID file ${path}: ${String(error)}`)
+      }
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+      try {
+        writeFileSync(path, `${randomUUID()}\n`, { flag: 'wx', mode: 0o600 })
+      } catch (writeError: unknown) {
+        // A second process may have created the same installation ID first.
+        if ((writeError as NodeJS.ErrnoException | undefined)?.code !== 'EEXIST') {
+          throw new Error(`dsh-auth: cannot write device ID file ${path}: ${String(writeError)}`)
+        }
+      }
+      try {
+        value = readFileSync(path, 'utf8')
+      } catch (readError: unknown) {
+        throw new Error(`dsh-auth: cannot read device ID file ${path}: ${String(readError)}`)
+      }
+    }
+    const id = value.trim()
+    if (!DEVICE_ID_PATTERN.test(id)) {
+      throw new Error(`dsh-auth: device ID file ${path} is not a UUID; fix or remove it by hand`)
+    }
+    this.deviceId = id
+    return id
   }
 
   /** The stored credential for one provider, possibly expired. */

@@ -270,8 +270,8 @@ dsh-tui
 
 | 命令 | 参数 | 作用 |
 |---|---|---|
-| `/provider` | 无 | 交互式管理模型提供方（添加 / 编辑 / 删除；标准 profile 内置 **OAuth 订阅登录** ChatGPT / Claude / Grok，免 API key） |
-| `/auth` | `status` / `login [provider]` / `logout <provider>` | 内置订阅 OAuth：查看状态、登录或删除本地凭据（provider：`openai-codex` / `anthropic` / `xai`） |
+| `/provider` | 无 | 交互式管理模型提供方（添加 / 编辑 / 删除；标准 profile 内置 **OAuth 订阅登录** ChatGPT/Codex / Claude / Grok，宿主 pi-ai 支持时还包括 OpenAI 直连 / Meta Muse） |
+| `/auth` | `status` / `login [provider]` / `logout <provider>` | 内置订阅 OAuth：查看状态、登录或删除本地凭据（`openai-codex` / `anthropic` / `xai`；较新 pi-ai 另有 `openai` / `meta`） |
 | `/login` | 无 | 凭证状态（来源、存储可写性、base URL；OAuth 模块挂载时另列订阅账号状态） |
 | `/logout` | 无 | 登出说明（env 来源需删环境变量并重启） |
 | `/permission` | 无 / `<preset>` / `status` | 查看/切换权限预设与策略（无参打开选择器） |
@@ -384,7 +384,7 @@ dsh-TUI 不预装通用技能；`/skills` 浏览 DSH 发现的技能，可直调
 - `dsh-tui <路径>` 同样接受工作区目标。
 - `/doctor` 自检：Node/平台、API key、模型路由、cwd、上下文窗口、会话存储、插件宿主。
 - `/provider` 交互向导管理模型提供方：添加 / 编辑 / 删除。
-  - 标准 profile 的内置 OAuth 模块提供 **订阅账号登录**（ChatGPT / Claude / Grok，免 API key）；也可用 `/auth login <provider>`，`/auth logout <provider>` 删除保存的 OAuth 凭据。
+  - 标准 profile 的内置 OAuth 模块提供 **订阅账号登录**（ChatGPT/Codex / Claude / Grok；较新 pi-ai 另有 OpenAI 直连 / Meta Muse，免 API key）；也可用 `/auth login <provider>`，`/auth logout <provider>` 删除保存的 OAuth 凭据。
 - 非环境变量 API key 写入 `~/.dsh/.credentials.yaml`（0600），界面只显示 `••••••`；OAuth 凭据另存于 `$DSH_HOME/dsh-auth/credentials.json`（未设置 DSH_HOME 时为 `~/.dsh/dsh-auth/credentials.json`）。
   - 自定义端点需填路由名、API key、baseURL 与协议（`openai-completions` / `openai-responses` /
   `anthropic-messages`）。

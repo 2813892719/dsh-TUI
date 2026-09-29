@@ -14,7 +14,7 @@ import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import { asStoredCredential, CredentialFile, type StoredOAuthCredential } from './credentials.js'
 import { oauthOf } from './profiles.js'
 import { QuestionBridge, type AskFn } from './interaction.js'
-import type { PiAiProvider } from './pi-ai.js'
+import { loginOAuth, type PiAiProvider } from './pi-ai.js'
 
 /**
  * The constructed catalog provider one mounted route carries. 0.1.5 made
@@ -135,13 +135,19 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
     }
     const oauth = oauthOf(mountedProvider(profile))
     const runAbort = new AbortController()
+    const forwardAbort = () => runAbort.abort(signal?.reason)
     if (signal !== undefined) {
-      if (signal.aborted) runAbort.abort(signal.reason)
-      else signal.addEventListener('abort', () => runAbort.abort(signal.reason), { once: true })
+      if (signal.aborted) forwardAbort()
+      else signal.addEventListener('abort', forwardAbort, { once: true })
     }
     const bridge = new QuestionBridge(ask, runAbort)
     try {
-      const returned = await oauth.login(bridge)
+      runAbort.signal.throwIfAborted()
+      const returned = await loginOAuth(oauth, bridge, {
+        // pi-ai 0.87.1's `openai` flow needs this on login. Older flows
+        // ignore the optional context, so the ID is created only on demand.
+        getDeviceId: () => deps.store.getOrCreateDeviceId(),
+      })
       const normalized = asStoredCredential(returned)
       if (normalized === undefined) {
         throw new Error(`dsh-auth: the ${oauth.name} flow returned an unusable credential; nothing was stored`)
@@ -150,6 +156,7 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       await deps.store.modify(provider, async () => stored)
       return { provider, oauthLabel: oauth.name, expiresAt: stored.expires }
     } finally {
+      signal?.removeEventListener('abort', forwardAbort)
       await bridge.settle()
     }
   }
