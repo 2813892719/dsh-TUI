@@ -220,6 +220,7 @@ function createChannelWithOwner(
   const jobControl = jobProjection.control
   const attachJobs = jobProjection.attach
   const resetJobProjection = jobProjection.reset
+  const reanchorJobProjection = jobProjection.reanchor
 
 
   // The DSH slash-command registry (optional service): /plan, /goal and
@@ -500,6 +501,15 @@ function createChannelWithOwner(
       mode: sessionModes[0]!,
       cwdDescription: workspaceService.describe(options.cwd).description ?? options.cwd,
     }),
+    // Deprecated pre-rename alias of `minimalUi`. An accessor is required here
+    // (a field set in createInitialChannelView would be copied by the spread
+    // into a stale data property). Read-only on purpose: the only supported
+    // write path is `setMinimalUi()` / its `setMinimal()` alias, and the
+    // frozen `ChannelUi` view third-party scenes receive exposes it read-only
+    // anyway.
+    get minimal(): boolean {
+      return state.minimalUi
+    },
     commandList: LOCAL_COMMANDS,
     ...actionMethods,
     subagentControl,
@@ -802,7 +812,12 @@ function createChannelWithOwner(
     messageObserver,
     retireAttachment,
   })
-  const bindAgent = bindingEvents.bind
+  const rawBindAgent = bindingEvents.bind
+  /** Bind the new agent, then re-anchor the job projection: its event
+   *  subscription is deliberately owner-agnostic, so this is what makes the
+   *  /jobs roster follow a session switch immediately instead of waiting for
+   *  the new session's first job event. */
+  const bindAgent = (): void => { rawBindAgent(); reanchorJobProjection() }
 
   const sessionAdoption = createSessionAdoption(state, {
     binding,

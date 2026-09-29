@@ -4137,7 +4137,7 @@ export function Chat({
   // Who owns the spinner slot: with the working-activity line on, that slot
   // draws the user's `/activity` preset, so the compaction row borrows the same
   // indicator instead of answering with the classic dot.
-  const activitySlot = channel.activityEnabled && !channel.minimal
+  const activitySlot = channel.activityEnabled && !channel.minimalUi
 
   // An automatic compaction runs INSIDE the turn, so it rides whichever spinner
   // the slot shows as a badge instead of a second row (the spinner's timer is
@@ -4852,6 +4852,8 @@ export function Chat({
                   band: wakeBand,
                   hint: trajectorySeen ? undefined : primaryComboString('trajectory'),
                   tick: Math.floor(wakeTime / 120),
+                  onOpen: openScene,
+                  hoverHint: primaryComboString('trajectory'),
                 }
           }
         />

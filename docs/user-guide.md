@@ -30,7 +30,7 @@ dsh-tui
 - `dsh-tui safe`：安全模式——只读查看环境、列出 profile 插件并给出修复建议，还能创建干净的救援 profile（见 §5.5）。
 - `dsh --profile dsh-tui`：与 `dsh-tui` 等价的手工启动方式（`/update` 仅此方式可用）。
 - `deepseek-official` 路由需要 `DEEPSEEK_API_KEY`；DSH 0.2.0-rc.1+ 可用标准 profile 的 `deepseek-account` 浏览器授权路由。其他支持的订阅模型可用内置 OAuth 登录。环境自检用 `/doctor`。
-- 主验证 dsh 引擎版本 `0.2.0-rc.1`；兼容列表以 `ADAPTER.md` 为准，列表之外的版本在 logo 页提示版本漂移与对齐命令。
+- 主验证 dsh 引擎版本 `0.2.0-rc.2`；兼容列表以 `ADAPTER.md` 为准，列表之外的版本在 logo 页提示版本漂移与对齐命令。
 - 如果 logo 页出现 ⚠ 版本漂移警告，按提示执行 `npm i -g @deepseek-ai/dsh@<版本>` 对齐 dsh 引擎。
 
 ### 1.2 首次启动你会看到
@@ -355,9 +355,10 @@ dsh-TUI 不预装通用技能；`/skills` 浏览 DSH 发现的技能，可直调
 - `/model`：选择器。**切换 = fork 会话续聊**（历史保留、仅换路由，旧会话留在 `/resume`）；
   持久化 `~/.dsh-tui/model.json`。
 - 回合运行中切换会被拒绝。
-- `/preset` 可选：`standard`（默认全功能）、`ptc`、`minimal`（仅 bash+编辑器，无 compaction）、
+- `/preset` 可选：`standard`（默认全功能）、`ptc`、`minimal`（内核「极简模式」：只暴露一个持久 shell 工具，无 compaction、无计划模式）、
   `cordis`、`liangshen`（梁神模式）。
   **已产生对话的会话不能切换**（blank-only）：选择只保存为下次 `/new` 的默认。
+  这里的 preset 是**内核 Agent 预设**，决定模型能用哪些工具；界面上的 `/settings → 极简界面`（Minimal UI）与它无关。
 - 会话模式用 `Shift+Tab` 循环：default（workspace-write + 审批）→ plan（read-only）→
   full（danger-full-access）。
 - 第三方权限预设按 registry 顺序排在末尾。
@@ -458,6 +459,7 @@ dsh-tui 自身区块在 0.1.7 写入当前 profile 的 `cordis.patch.yml`，旧�
 |---|---|
 | lang | 界面语言 zh/en（DSH_TUI_LANG 钉死时不可改） |
 | fullscreen | 全屏模式（默认开）；保存后用 `/restart` 生效 |
+| minimal | 极简界面 Minimal UI（默认关）：隐藏开屏头部、emoji 状态符与装饰性配色，底栏只留模型与目录；代码高亮与工具配色保留。**这是界面开关**，对模型能力没有任何影响——别和 `/preset` 的内核「极简模式」预设搞混 |
 | terminalImages | 终端图片预览（默认开，需终端支持）；保存后用 `/restart` 生效。关闭后只显示文字信息并跳过预览解码，不影响向模型发送图片 |
 | imageBacking | 图片底色（默认 `transparent`，与上一条同在**图表与图片**主题下）：聊天照片/插图背后垫什么。透明：只画图片自己的像素，抗锯齿边缘和透明圆角透出终端底色或壁纸；终端底色：先合成到终端背景色，柔和边缘更平滑。立即生效 |
 | whale | 开屏头部像素鲸鱼娘（默认开）；每次启动随机三选一开场动画（经典/爱心/睡觉），`/deepseek` 彩蛋重掷 |

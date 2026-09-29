@@ -78,7 +78,7 @@
 
 前置条件：安装 [Node.js](https://nodejs.org/zh-cn) 与 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。`deepseek-official` API key 路由需要 `DEEPSEEK_API_KEY`；DSH 0.2.0-rc.1+ 的标准 profile 也可用 `/auth login deepseek-account` 登录，再通过 `/model` 选择独立的账号路由。其他支持的账号可在启动后通过 `/provider` 或 `/auth` 登录。
 
-主适配目标为 DSH `0.2.0-rc.1`，已接入新版 Shell API、V4 会话消息、声明式预设与
+主适配目标为 DSH `0.2.0-rc.2`，已接入新版 Shell API、V4 会话消息、声明式预设与
 profile 设置；旧受支持版本保留兼容路径。迁移说明见[配置参考](docs/configuration.md)。
 
 DSH 0.1.7 的 `/settings` 使用 TUI 实际的 Loader 行 ID，也支持自定义 ID。
@@ -192,7 +192,7 @@ TUI 只负责交互与呈现：会话日志是唯一事实源，模型、工具�
 - `/model` 靠 fork 切换会话；旧会话留在 `/resume`（还没人说过话的会话不记分支，换完模型第一个 prompt 仍能自动生成标题）。
 - `Ctrl+V` 需要平台剪贴板工具；不支持的位图格式直接拒绝。
 - 后台会话活在本进程内，TUI 退出即停止。
-- `/thinking` 不持久化；`/compact` 在 `minimal` 预设下不可用；`/update` 需 `dsh --profile` 启动，回合运行中会被拒绝。
+- `/thinking` 不持久化；`/compact` 在内核 `minimal` 预设（极简模式，只暴露一个持久 shell 工具）下不可用——它和 `/settings → 极简界面`（Minimal UI）这个界面显示开关不是一回事；`/update` 需 `dsh --profile` 启动，回合运行中会被拒绝。
 - 状态栏 `≈¥` 与 `/cost` 是本会话估算：包含子代理用量，按各自模型 × 峰值/空闲 × 缓存分项计价；非官方/未收录模型只显示 token 并标注未计价。**估算仅供参考，以平台账单为准。**
 
 完整清单见[架构与限制](docs/architecture.md)。
