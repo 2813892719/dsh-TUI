@@ -34,7 +34,7 @@
 - **会话工作流** — `/new` `/compact` `/export` `/btw`、模型热切换、fork、回溯、vim、全屏草稿编辑器。
 - **IDE 选区通道** — VS Code 里选中的代码进 prompt。
 - **DSH 集成** — presets、技能、MCP、目标、待办、子代理、问卷。
-- **订阅账号登录** — 标准 profile 挂载 pi-ai 可用的 ChatGPT/Codex、Claude、Grok OAuth；较新宿主还支持 OpenAI 直连与 Meta Muse。通过 `/provider` 或 `/auth` 使用，无需另装插件。
+- **账号登录** — 标准 profile 提供 pi-ai 的 ChatGPT/Codex、Claude、Grok OAuth（可用时还有 OpenAI 直连与 Meta Muse）；DSH 0.2.0-rc.1+ 还通过宿主服务提供 DeepSeek 浏览器登录，路由为 `deepseek-account`。通过 `/provider` 或 `/auth` 使用，无需另装插件。
 - **扩展** — 浏览器交互、computer use 等。
 - **为长会话设计** — 事件驱动投影、虚拟化、有界缓存。
 
@@ -76,7 +76,7 @@
 
 ## 快速开始
 
-前置条件：安装 [Node.js](https://nodejs.org/zh-cn) 与 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。运行 DeepSeek 模型需要 `DEEPSEEK_API_KEY`；标准 profile 也可在启动后通过 `/provider` 或 `/auth` 登录支持的订阅账号。
+前置条件：安装 [Node.js](https://nodejs.org/zh-cn) 与 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。`deepseek-official` API key 路由需要 `DEEPSEEK_API_KEY`；DSH 0.2.0-rc.1+ 的标准 profile 也可用 `/auth login deepseek-account` 登录，再通过 `/model` 选择独立的账号路由。其他支持的账号可在启动后通过 `/provider` 或 `/auth` 登录。
 
 主适配目标为 DSH `0.2.0-rc.1`，已接入新版 Shell API、V4 会话消息、声明式预设与
 profile 设置；旧受支持版本保留兼容路径。迁移说明见[配置参考](docs/configuration.md)。

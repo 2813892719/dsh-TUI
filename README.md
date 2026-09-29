@@ -35,7 +35,7 @@
 - **Session workflow** — `/new` `/compact` `/export` `/btw`, model hot-switch, fork, rewind, vim, fullscreen draft editor.
 - **IDE selection channel** — a VS Code selection lands in the prompt.
 - **DSH integrations** — presets, skills, MCP, goals, todos, subagents, questionnaires.
-- **Subscription sign-in** — the standard profile mounts available pi-ai OAuth routes for ChatGPT/Codex, Claude, and Grok; newer hosts also add OpenAI direct and Meta Muse. Use `/provider` or `/auth` without another plugin.
+- **Account sign-in** — the standard profile offers pi-ai OAuth for ChatGPT/Codex, Claude, and Grok (plus OpenAI direct and Meta Muse when available), and Host-owned DeepSeek browser sign-in as `deepseek-account` on DSH 0.2.0-rc.1+. Use `/provider` or `/auth` without another plugin.
 - **Extensions** — browser interaction, computer use and more.
 - **Built for long sessions** — event-driven projection, virtualization, bounded caches.
 
@@ -82,8 +82,10 @@ daily** (TypeScript).
 
 Prerequisites: [Node.js](https://nodejs.org/en) and
 [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
-DeepSeek models need `DEEPSEEK_API_KEY`; the standard profile can instead sign
-in to supported subscriptions through `/provider` or `/auth` after startup.
+The `deepseek-official` API-key route needs `DEEPSEEK_API_KEY`. On DSH
+0.2.0-rc.1+, the standard profile can instead use `/auth login deepseek-account`
+and select the separate account route through `/model`. Other supported
+accounts can sign in through `/provider` or `/auth` after startup.
 
 The primary compatibility target is DSH `0.2.0-rc.1`. This adapter supports its
 Shell API, V4 session messages, declarative presets, and profile-backed settings;

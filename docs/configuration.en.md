@@ -310,8 +310,8 @@ ships the newer flows (0.87.1+), it also offers OpenAI direct ChatGPT sign-in
 (`openai`, using the OpenAI API rather than the legacy Codex backend) and Meta
 Muse (`meta`). The validated DSH `0.2.0-rc.1` fixture still carries pi-ai
 `0.85.1`, so it keeps the original three until the host dependency is updated.
-`/auth status`, `/auth login [provider]`, and `/auth logout <provider>` share
-that credential store. Browser authorization tries to open the page
+`/auth status`, `/auth login [provider]`, and `/auth logout <provider>` use
+that credential store for these pi-ai routes. Browser authorization tries to open the page
 automatically and offers the authorization link and manual callback URL/code
 input on one question;
 device-code flows show a copyable code while polling. A host without an
@@ -337,6 +337,43 @@ contains long-lived refresh tokens; directory/file modes are best-effort
 Status surfaces show only sign-in and expiry metadata. Models appear in the
 picker after sign-in. If another `llm-pi-ai` profile already owns the same
 provider route, the OAuth route refuses duplicate registration.
+
+### DeepSeek account authorization
+
+DSH `0.2.0-rc.1+` separately provides the Host-owned `deepseekAccount` service
+and `deepseek-account` model route. The standard profile includes it in the
+same `/provider` account sign-in branch and the `/auth status` and `/login`
+lists. You can also run `/auth login deepseek-account` directly, then select
+a `deepseek-account` model via `/model`. This is a **different route** from
+`deepseek-official`, which still needs `DEEPSEEK_API_KEY`. The command
+`/auth logout deepseek-account` delegates sign-out to the Host: it removes the Host's local
+grant, while the Host handles remote revocation in the background. The TUI
+does not implement PKCE, read the account token, or put the grant in the
+`dsh-auth/credentials.json` file above. DeepSeek account grants have no pi-ai
+token expiry/refresh timestamp, so status surfaces show only signed in/out.
+`dsh-tui-auth.config.providers` and `modelOverrides` still control pi-ai
+routes only; do not put `deepseek-account` in them.
+
+The browser callback uses the Host `webServer` service. A TUI-only profile's
+`dsh-tui-webserver` row listens on `127.0.0.1` with an OS-assigned port; a
+mixed Web+TUI profile reuses the official `webserver` row instead of opening a
+second listener. The question panel tries to open the authorization URL and
+offers the full link plus copy, reopen, and cancel actions. The DeepSeek flow
+**requires the callback**; it has no manual-code fallback. If a remote TUI
+uses your local browser over SSH, override `dsh-tui-webserver.port` to a fixed
+port and forward that same port (for example,
+`ssh -L 43123:127.0.0.1:43123 ...`):
+
+```yaml
+- id: dsh-tui-webserver
+  config:
+    host: 127.0.0.1
+    port: 43123
+```
+
+In a mixed Web profile, override the official `webserver` row. Missing
+callback listeners fail sign-in clearly without affecting the other pi-ai
+OAuth routes.
 
 ## Composition constraints
 

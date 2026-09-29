@@ -4,7 +4,10 @@
  * One internal Cordis module mounts supported subscription routes from the
  * installed pi-ai catalog (ChatGPT/Codex, Claude, Grok, and newer flows when
  * available) as `llm` registry routes. Signed-in models appear in model
- * pickers; unsigned routes remain addressable for saved sessions.
+ * pickers; unsigned routes remain addressable for saved sessions. When the
+ * Host supplies `deepseekAccount`, the same sign-in surface also delegates
+ * DeepSeek browser authorization to that service; the Host owns its model
+ * route, callback, and credential store.
  * `PiAiAdapter` runs with this
  * module's file-backed pi-ai `CredentialStore` injected
  * (`PiAiAuthInjection`): requests resolve the stored OAuth credential through
@@ -51,6 +54,7 @@ import { availableOAuthProviderIds, buildOAuthProfile, OAUTH_PROVIDER_IDS, type 
 import { createDshAuthApi, DshAuthService } from './service.js'
 import { createAuthCommandHandler } from './command.js'
 import type { PiAiAuthContext } from './pi-ai.js'
+import { deepSeekAccountFrom, deepSeekCallbackOrigin } from './deepseek.js'
 
 export const name = 'dsh-auth'
 /**
@@ -110,6 +114,7 @@ export type { AskFn, QuestionBridgeHelpers } from './interaction.js'
 export { copyToClipboard, openInBrowser, openerFor } from './opener.js'
 export { CredentialFile, defaultCredentialsFile } from './credentials.js'
 export { OAUTH_PROVIDER_IDS, availableOAuthProviderIds, buildOAuthProfile, type ModelOverride } from './profiles.js'
+export { DEEPSEEK_ACCOUNT_PROVIDER, deepSeekAccountFrom, deepSeekCallbackOrigin, deepSeekClientMetadata, loginDeepSeekAccount } from './deepseek.js'
 
 /**
  * The ambient auth context providers may consult while resolving their own
@@ -215,6 +220,8 @@ export function apply(ctx: Context, config: Config): void {
   const api = createDshAuthApi({
     profiles,
     store,
+    resolveDeepSeekAccount: () => deepSeekAccountFrom(ctx),
+    resolveCallbackOrigin: () => deepSeekCallbackOrigin(ctx),
     resolveAsk: () => {
       const questions = ctx.get('userQuestions')
       return questions === undefined ? undefined : request => questions.ask(request)
@@ -253,7 +260,7 @@ export function apply(ctx: Context, config: Config): void {
       const handler = createAuthCommandHandler(api)
       releases.push(commands.register({
         name: 'auth',
-        description: 'Provider subscription sign-in (OAuth): status, login, logout',
+        description: 'Provider account sign-in (OAuth): status, login, logout',
         handler: invocation => {
           const operation = handler(invocation)
           active.add(operation)

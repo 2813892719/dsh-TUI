@@ -13,7 +13,9 @@ const USAGE = 'Usage: /auth [status] | /auth login [provider] | /auth logout <pr
 function renderStatus(rows: readonly DshAuthSignInStatus[]): string {
   const lines = rows.map(row => {
     const state = row.signedIn
-      ? `signed in — token expires ${new Date(row.expiresAt ?? 0).toISOString()}`
+      ? row.expiresAt === undefined
+        ? 'signed in'
+        : `signed in — token expires ${new Date(row.expiresAt).toISOString()}`
       : row.expired
         ? 'signed in, token expired — /auth login to refresh'
         : 'not signed in'
@@ -47,8 +49,9 @@ export function createAuthCommandHandler(api: DshAuthApi): (invocation: CommandI
         const result = await api.login(target, invocation.signal)
         return {
           kind: 'success',
-          text: `Signed in to ${result.oauthLabel} (${result.provider}); token expires `
-            + `${new Date(result.expiresAt).toISOString()}. Its models are selectable via /model.`,
+          text: `Signed in to ${result.oauthLabel} (${result.provider})`
+            + `${result.expiresAt === undefined ? '' : `; token expires ${new Date(result.expiresAt).toISOString()}`}. `
+            + 'Its models are selectable via /model.',
         }
       } catch (error: unknown) {
         return { kind: 'error', text: `dsh-auth: ${error instanceof Error ? error.message : String(error)}` }

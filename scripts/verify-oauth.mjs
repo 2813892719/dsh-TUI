@@ -9,7 +9,9 @@
  * runtime-gated OAuth flow presence, adapter-facing defaults), the question
  * bridge (select/text mapping, browser callback/manual-input single surface,
  * waiting-panel cancel wiring), and the service api (status/login/logout
- * over a fabricated flow), plus the public ./oauth entry's
+ * over a fabricated flow), the Host-owned DeepSeek account handoff (state,
+ * callback origin, browser panel, cancellation, masked command results),
+ * plus the public ./oauth entry's
  * route/command/service mount and lifecycle cleanup.
  *
  * Run after build: `pnpm verify:oauth`.
@@ -32,6 +34,10 @@ const {
   createDshAuthApi,
   openerFor,
   CredentialGatedAdapter,
+  DEEPSEEK_ACCOUNT_PROVIDER,
+  deepSeekCallbackOrigin,
+  deepSeekClientMetadata,
+  loginDeepSeekAccount,
 } = oauthModule
 const { Context } = await import('@deepseek-ai/cordis')
 const { QuestionStore } = await import('../lib/types/dsh-adapter/questions.js')
@@ -59,6 +65,63 @@ const ok = (condition, label) => {
   } else {
     failed += 1
     console.error(`FAIL  ${label}`)
+  }
+}
+
+/** A credential-free account state stream with the same attempt transitions as the Host. */
+function fakeDeepSeekAccount() {
+  const id = 'account-attempt-1'
+  const links = { usageUrl: 'https://platform.deepseek.com/usage', topUpUrl: 'https://platform.deepseek.com/top-up' }
+  let state = { status: 'signed-out', links, attempt: null }
+  let revision = 0
+  const wakes = new Set()
+  const calls = { starts: [], cancels: [], signOuts: [] }
+  const update = next => {
+    state = next
+    revision += 1
+    for (const wake of [...wakes]) wake()
+  }
+  return {
+    calls,
+    current: () => state,
+    update,
+    getState: async () => state,
+    startSignIn: async (client, origin, source) => {
+      calls.starts.push({ client, origin, source })
+      update({ status: 'signed-out', links, attempt: { id, phase: 'initializing' } })
+      return state
+    },
+    cancelSignIn: async target => {
+      calls.cancels.push(target)
+      if (state.attempt?.id === target && !['succeeded', 'failed', 'cancelled', 'expired'].includes(state.attempt.phase)) {
+        update({ status: 'signed-out', links, attempt: { id, phase: 'cancelled' } })
+      }
+      return state
+    },
+    signOut: async client => {
+      calls.signOuts.push(client)
+      update({ status: 'signed-out', links, attempt: null })
+      return state
+    },
+    async *watch(signal) {
+      let seen = -1
+      while (!signal.aborted) {
+        if (revision !== seen) {
+          seen = revision
+          yield state
+          continue
+        }
+        await new Promise(resolve => {
+          const wake = () => {
+            wakes.delete(wake)
+            signal.removeEventListener('abort', wake)
+            resolve()
+          }
+          wakes.add(wake)
+          signal.addEventListener('abort', wake, { once: true })
+        })
+      }
+    },
   }
 }
 
@@ -545,6 +608,102 @@ try {
   }
   ok(unknownLogin.includes('unknown provider'), 'login names the mounted set on an unknown provider')
 
+  // ── Host-owned DeepSeek account ──────────────────────────────────────────
+  console.log('DeepSeek account handoff')
+  const callbackContext = new Context()
+  try {
+    let noListener = ''
+    try { deepSeekCallbackOrigin(callbackContext) } catch (error) { noListener = error.message }
+    ok(noListener.includes('webServer'), 'DeepSeek sign-in refuses without a Host callback listener')
+    callbackContext.provide('webServer', { port: 43123 })
+    ok(deepSeekCallbackOrigin(callbackContext) === 'http://127.0.0.1:43123',
+      'the callback origin uses the active Host port and loopback address')
+  } finally {
+    await callbackContext.fiber.dispose()
+  }
+  const callbackOrigin = 'http://127.0.0.1:43123'
+  const englishClient = deepSeekClientMetadata()
+  setLang('zh')
+  const chineseClient = deepSeekClientMetadata()
+  setLang('en')
+  ok(englishClient.version === manifest.version && englishClient.locale === 'en-US'
+    && chineseClient.locale === 'zh-CN'
+    && englishClient.timezoneOffsetSeconds === -new Date().getTimezoneOffset() * 60,
+  'account requests identify the current TUI version, language, and timezone')
+
+  const account = fakeDeepSeekAccount()
+  const accountQuestions = new QuestionStore()
+  const accountOpened = []
+  const accountUrl = 'https://platform.deepseek.com/dsh/authorize?authorize_id=fixture'
+  const accountLogin = loginDeepSeekAccount(account, callbackOrigin,
+    request => accountQuestions.ask(request), undefined, {
+      openUrl: url => { accountOpened.push(url); return true },
+      copyText: async () => true,
+    })
+  ok(await settled(() => account.calls.starts.length === 1)
+    && account.calls.starts[0].origin === callbackOrigin
+    && account.calls.starts[0].source === 'web',
+  'DeepSeek authorization starts through the Host with its loopback callback origin')
+  account.update({ ...account.current(), attempt: { id: 'account-attempt-1', phase: 'waiting-browser', authorizeUrl: accountUrl } })
+  ok(await settled(() => accountQuestions.getSnapshot()?.question.id === 'dsh-auth-waiting')
+    && accountOpened[0] === accountUrl
+    && accountQuestions.getSnapshot()?.question.detail?.includes(accountUrl),
+  'Host authorize URL opens through the existing question bridge and remains copyable')
+  account.update({ ...account.current(), status: 'credential-stored', attempt: { id: 'account-attempt-1', phase: 'succeeded' } })
+  await accountLogin
+  ok(account.calls.cancels.length === 0 && accountQuestions.getSnapshot() === null,
+    'a committed Host credential completes sign-in and retires the waiting panel')
+
+  const cancelledAccount = fakeDeepSeekAccount()
+  const cancelledQuestions = new QuestionStore()
+  const cancelledLogin = loginDeepSeekAccount(cancelledAccount, callbackOrigin,
+    request => cancelledQuestions.ask(request), undefined, { openUrl: () => false })
+    .then(() => '', error => error.message)
+  ok(await settled(() => cancelledAccount.calls.starts.length === 1), 'cancel fixture started its Host attempt')
+  cancelledAccount.update({ ...cancelledAccount.current(), attempt: { id: 'account-attempt-1', phase: 'waiting-browser', authorizeUrl: accountUrl } })
+  ok(await settled(() => cancelledQuestions.getSnapshot()?.question.id === 'dsh-auth-waiting'),
+    'cancel fixture exposes the waiting panel')
+  cancelledQuestions.cancelCurrent()
+  const cancelledReason = await cancelledLogin
+  ok(cancelledReason.includes('cancelled') && cancelledAccount.calls.cancels[0] === 'account-attempt-1'
+    && cancelledQuestions.getSnapshot() === null,
+  'Esc cancels the exact upstream attempt and retires the panel')
+
+  const failedAccount = fakeDeepSeekAccount()
+  const failedLogin = loginDeepSeekAccount(failedAccount, callbackOrigin, fakeAsk, undefined,
+    { openUrl: () => false }).then(() => '', error => error.message)
+  ok(await settled(() => failedAccount.calls.starts.length === 1), 'failure fixture started its Host attempt')
+  failedAccount.update({ ...failedAccount.current(), attempt: { id: 'account-attempt-1', phase: 'failed', errorCode: 'network' } })
+  ok((await failedLogin).includes('network') && failedAccount.calls.cancels.length === 0,
+    'Host failure surfaces its safe code without cancelling a settled attempt')
+
+  const facadeAccount = fakeDeepSeekAccount()
+  facadeAccount.startSignIn = async (client, origin, source) => {
+    facadeAccount.calls.starts.push({ client, origin, source })
+    facadeAccount.update({ ...facadeAccount.current(), status: 'credential-stored',
+      attempt: { id: 'account-attempt-1', phase: 'succeeded' } })
+    return facadeAccount.current()
+  }
+  const accountApi = createDshAuthApi({
+    profiles: new Map([['fake', fakeProfile]]), store: apiStore,
+    resolveAsk: () => fakeAsk,
+    resolveDeepSeekAccount: () => facadeAccount,
+    resolveCallbackOrigin: () => callbackOrigin,
+    logger: { warn() {} },
+  })
+  const accountRows = await accountApi.providers()
+  ok(accountRows.length === 2 && accountRows[1].provider === DEEPSEEK_ACCOUNT_PROVIDER
+    && accountRows[1].signedIn === false && accountRows[1].expiresAt === undefined,
+  'the facade appends the Host account without registering a second pi-ai route')
+  const accountResult = await accountApi.login(DEEPSEEK_ACCOUNT_PROVIDER)
+  ok(accountResult.expiresAt === undefined && facadeAccount.calls.starts[0].origin === callbackOrigin
+    && (await accountApi.providers())[1].signedIn === true,
+  'facade login delegates to the Host and reports a non-expiring account grant')
+  ok(await accountApi.logout(DEEPSEEK_ACCOUNT_PROVIDER)
+    && facadeAccount.calls.signOuts.length === 1
+    && (await apiStore.read(DEEPSEEK_ACCOUNT_PROVIDER)) === undefined,
+  'facade logout calls Host signOut and never stores the account grant in pi-ai credentials')
+
   // ── public Cordis entry ──────────────────────────────────────────────────
   console.log('Cordis mount')
   const ctx = new Context()
@@ -563,6 +722,8 @@ try {
       return () => { released.push('commands') }
     },
   })
+  ctx.provide('deepseekAccount', facadeAccount)
+  ctx.provide('webServer', { port: 43123 })
   try {
     const fiber = await ctx.plugin(oauthModule, {
       providers: ['openai-codex'],
@@ -577,12 +738,21 @@ try {
     const service = ctx.get('dshAuth')
     ok((await service?.api?.providers())?.[0]?.provider === 'openai-codex',
       'the internal entry exposes ctx.dshAuth for /provider and /login')
+    ok((await service?.api?.providers())?.some(row => row.provider === DEEPSEEK_ACCOUNT_PROVIDER),
+      'the public entry discovers the Host account service at runtime')
     const status = await registeredCommands[0].handler({ rawInput: 'status', signal: new AbortController().signal })
-    ok(status.kind === 'success' && status.text.includes('not signed in') && !status.text.includes('access'),
-      '/auth status returns masked metadata only')
+    ok(status.kind === 'success' && status.text.includes('deepseek-account')
+      && status.text.includes('not signed in') && !status.text.includes('access')
+      && !status.text.includes('1970'),
+    '/auth status returns masked account metadata without a fake token expiry')
     const headless = await registeredCommands[0].handler({ rawInput: 'login openai-codex', signal: new AbortController().signal })
     ok(headless.kind === 'error' && headless.text.includes('interactive surface'),
       '/auth login refuses clearly without an interactive question surface')
+    ctx.provide('userQuestions', { ask: fakeAsk })
+    const accountCommand = await registeredCommands[0].handler({ rawInput: 'login deepseek-account', signal: new AbortController().signal })
+    ok(accountCommand.kind === 'success' && accountCommand.text.includes('DeepSeek')
+      && !accountCommand.text.includes('token expires') && !accountCommand.text.includes('1970'),
+    '/auth login deepseek-account uses the Host flow and omits token-expiry copy')
     await fiber.dispose()
     ok(released.length === 2 && released.includes('llm') && released.includes('commands'),
       'Cordis teardown unregisters both the route and /auth')

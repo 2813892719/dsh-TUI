@@ -76,6 +76,7 @@ const shared = [
   { id: 'agent-presets', name: '@deepseek-ai/dsh-agent-presets' },
   { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry' },
   { id: 'cordis-host-runner', name: '@deepseek-ai/dsh-cordis-host-runner' },
+  { id: 'webserver', name: '@deepseek-ai/dsh-host-webserver' },
 ]
 
 for (const baseline of baselines) {
@@ -105,6 +106,8 @@ for (const baseline of baselines) {
   const hasSubagentModelSelectionSettings = resolvePackage(
     '@deepseek-ai/dsh-tool-subagent/model-selection-settings',
   ) !== undefined
+  const hasWebServer = resolvePackage('@deepseek-ai/dsh-host-webserver/package.json') !== undefined
+  const hasDeepSeekAccountProvider = resolvePackage('@deepseek-ai/dsh-deepseek-account-platform/package.json') !== undefined
   const basePatches = baseline.basePath === undefined ? [] : loadPatch(baseline.basePath)
   const webPatches = loadPatch(baseline.webPath)
   assert.ok(Array.isArray(basePatches), `${baseline.label}: base patch must be a top-level list`)
@@ -145,6 +148,7 @@ for (const baseline of baselines) {
     const unavailable = id === 'agent-preset-registry' ? !hasRegistry
       : (id === 'agent-presets' || id === 'code-runtime') ? hasRegistry
         : id === 'subagent-model-selection-settings' ? !hasSubagentModelSelectionSettings
+          : id === 'webserver' ? !hasWebServer || !hasDeepSeekAccountProvider
           : false
     assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled)), unavailable,
       `${baseline.label}: ${scopedId} must follow the installed package generation`)
@@ -152,6 +156,14 @@ for (const baseline of baselines) {
       `${baseline.label}: ${scopedId} must yield to an enabled official row`)
     assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [{ options: { id, name }, disabled: true }])), unavailable,
       `${baseline.label}: a disabled official row does not own ${scopedId}`)
+    if (id === 'webserver') {
+      assert.ok(tuiRow.disabled.includes("require.resolve('@deepseek-ai/dsh-host-webserver/package.json')"),
+        `${baseline.label}: ${scopedId} must probe its own Host package`)
+      assert.ok(tuiRow.disabled.includes("require.resolve('@deepseek-ai/dsh-deepseek-account-platform/package.json')"),
+        `${baseline.label}: ${scopedId} must probe the Host account provider`)
+      assert.deepEqual(tuiRow.config, { host: '127.0.0.1', port: 0 },
+        `${baseline.label}: TUI-only callback listener must bind an OS-assigned loopback port`)
+    }
     if (id === 'subagent-model-selection-settings') {
       assert.ok(
         tuiRow.disabled.includes("require.resolve('@deepseek-ai/dsh-tool-subagent/model-selection-settings')"),

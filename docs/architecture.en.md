@@ -23,7 +23,7 @@ Cordis profile
 | --- | --- |
 | `src/index.ts` | Cordis plugin name, injection declaration, config interface, and Schema; keep the entry small and lazy |
 | `src/dsh-adapter/plugin.ts` | TTY guard, service assembly, Agent create/resume, React mount, and the single cleanup funnel |
-| `src/dsh-adapter/oauth/`, `src/oauth.ts` | Built-in subscription OAuth provider routes, `/auth` command, credential store, and question bridge; the public subpath only forwards to the internal implementation |
+| `src/dsh-adapter/oauth/`, `src/oauth.ts` | pi-ai subscription OAuth routes, `/auth` command, credential store, and question bridge; DeepSeek account sign-in delegates to the Host, and the public subpath only forwards to the internal implementation |
 | `src/dsh-adapter/questions-answerer.ts` / `preset-resolution.ts` | Prerelease dispatch for user questions and agent presets; consumers stay unaware of upstream version branches |
 | `src/dsh-adapter/channel.ts` | Channel composition root: options/services, owner/binding, specialist wiring, one install, final start/release, and compatibility exports |
 | `src/workspaces.ts` | Local-path fallback and generic workspace-provider registry; it must contain no provider protocol, copy, or dependency |
@@ -40,9 +40,11 @@ The standard profile still mounts the internal `./oauth` entry as the
 `dsh-tui-auth` Cordis row before the TUI, with row-level
 `inject: [llm, commands]` preserving registration order. The TUI consumes
 status and actions through `ctx.dshAuth`; it does not implement model or OAuth
-protocols. The credential location is unchanged, and the host's pi-ai supplies
-the authorization flows. Bare `cordis.yml` does not insert this row and has a
-different topology.
+protocols. pi-ai subscriptions keep their existing credential location and
+use the host's pi-ai flows; the DeepSeek account route delegates PKCE,
+credentials, and model routing to `ctx.deepseekAccount`. The TUI-only
+`dsh-tui-webserver` row supplies its browser callback. Bare `cordis.yml`
+does not insert these rows and has a different topology.
 
 The `channel.ts` responsibilities are split across these files:
 

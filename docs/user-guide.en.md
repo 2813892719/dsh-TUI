@@ -29,7 +29,7 @@ dsh-tui
 - `dsh-tui --resume`: resume the last session. On Windows you can also use `dsh-tui.cmd` from the repo (equivalent).
 - `dsh-tui safe`: safe mode — read-only environment view, lists profile plugins, suggests fixes, and can create a clean rescue profile (see §5.5).
 - `dsh --profile dsh-tui`: manual launch, equivalent to `dsh-tui` (`/update` only works this way).
-- DeepSeek models need `DEEPSEEK_API_KEY`; supported subscription models can use the standard profile's built-in OAuth sign-in. Run `/doctor` to check the environment.
+- The `deepseek-official` route needs `DEEPSEEK_API_KEY`; on DSH 0.2.0-rc.1+ the standard profile can use the separate `deepseek-account` browser-authorization route. Other supported subscriptions use built-in OAuth sign-in. Run `/doctor` to check the environment.
 - Primary verified dsh engine version: `0.2.0-rc.1`. See `ADAPTER.md` for compatibility lines; versions outside that list show a drift note and the command to align on the logo page.
 - If the logo page shows a ⚠ version-drift warning, align the dsh engine:
   `npm i -g @deepseek-ai/dsh@<版本>`
@@ -281,9 +281,9 @@ The command menu = built-in commands (50) + DSH registry commands (`/plan` `/goa
 
 | Command | Args | Effect |
 |---|---|---|
-| `/provider` | none | interactive model-provider wizard (add / edit / delete; the standard profile includes **OAuth subscription sign-in** for ChatGPT/Codex / Claude / Grok, plus OpenAI direct / Meta Muse when the host pi-ai supports them) |
-| `/auth` | `status` / `login [provider]` / `logout <provider>` | built-in subscription OAuth: inspect status, sign in, or remove local credentials (`openai-codex` / `anthropic` / `xai`; newer pi-ai also `openai` / `meta`) |
-| `/login` | none | credential status (source, store writability, base URL; subscription accounts are listed when the OAuth module is mounted) |
+| `/provider` | none | interactive model-provider wizard (add / edit / delete; standard-profile account sign-in includes DeepSeek on DSH 0.2.0-rc.1+, plus ChatGPT/Codex / Claude / Grok and, when supported by host pi-ai, OpenAI direct / Meta Muse) |
+| `/auth` | `status` / `login [provider]` / `logout <provider>` | inspect account status, sign in, or sign out (`deepseek-account` for DeepSeek; `openai-codex` / `anthropic` / `xai` for pi-ai subscriptions; newer pi-ai also `openai` / `meta`) |
+| `/login` | none | credential status (source, store writability, base URL; account states are listed when the OAuth module is mounted) |
 | `/logout` | none | logout notes (env source: delete the variable and restart) |
 | `/permission` | none / `<preset>` / `status` | view/switch permission preset and policy (no arg opens the selector) |
 | `/add-dir` | none | file-policy scope notes (rooted at the working directory) |
@@ -400,7 +400,8 @@ Keys are in §2.7. Key points:
 - `/doctor` check: Node/platform, API key, model routing, cwd, context window, session storage, plugin host.
 - `/provider` interactive wizard to manage model providers: add / edit / delete.
   - The standard profile's built-in OAuth module offers **subscription sign-in** (ChatGPT/Codex / Claude / Grok; OpenAI direct / Meta Muse on newer pi-ai, no API key); `/auth login <provider>` also signs in, and `/auth logout <provider>` removes the stored OAuth credential.
-- Non-env-variable API keys are written to `~/.dsh/.credentials.yaml` (0600), and the UI shows only `••••••`; OAuth credentials instead live in `$DSH_HOME/dsh-auth/credentials.json` (`~/.dsh/dsh-auth/credentials.json` when DSH_HOME is unset).
+  - DSH 0.2.0-rc.1+ delegates DeepSeek account browser authorization to the Host: run `/auth login deepseek-account`, then select the separate `deepseek-account` route with `/model`; `/auth logout deepseek-account` delegates sign-out to the Host. It does not change the `deepseek-official` API key.
+- Non-env-variable API keys are written to `~/.dsh/.credentials.yaml` (0600), and the UI shows only `••••••`; pi-ai subscription OAuth credentials instead live in `$DSH_HOME/dsh-auth/credentials.json` (`~/.dsh/dsh-auth/credentials.json` when DSH_HOME is unset). The Host credential service owns DeepSeek account grants; they are not written to that OAuth file.
   - Custom endpoints need route name, API key, baseURL, and protocol (`openai-completions` / `openai-responses` /
   `anthropic-messages`).
 - After add/edit, run `/model` to switch to the new route.

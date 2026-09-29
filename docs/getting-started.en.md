@@ -12,9 +12,10 @@
   then exits right after startup with almost no error output (issue #60, see
   Troubleshooting below).
 - An interactive terminal TTY. `dsh-tui` cannot start with stdout redirected.
-- DeepSeek models need `DEEPSEEK_API_KEY`; the standard profile can sign in to
-  supported subscriptions through `/provider` or `/auth` after startup. Set
-  `DEEPSEEK_BASE_URL` as well for a compatible custom endpoint.
+- The `deepseek-official` route needs `DEEPSEEK_API_KEY`; on DSH 0.2.0-rc.1+
+  the standard profile can instead sign in to the separate DeepSeek account
+  route with `/auth login deepseek-account`. Other supported accounts use
+  `/provider` or `/auth`. Set `DEEPSEEK_BASE_URL` for a compatible custom endpoint.
 
 macOS/Linux:
 
@@ -376,9 +377,9 @@ dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui@latest
 
 ### The model reports missing credentials
 
-For a DeepSeek model, confirm that `DEEPSEEK_API_KEY` is set in the same shell
-that starts `dsh`. Check `DEEPSEEK_BASE_URL` too for a custom endpoint. For a
-subscription model, inspect `/auth status` and sign in again with
+For `deepseek-official`, confirm that `DEEPSEEK_API_KEY` is set in the same shell
+that starts `dsh`. Check `DEEPSEEK_BASE_URL` too for a custom endpoint. For
+`deepseek-account` or a subscription model, inspect `/auth status` and sign in again with
 `/auth login <provider>` if needed.
 
 ### The activity row appears twice

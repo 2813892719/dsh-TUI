@@ -271,7 +271,7 @@ Claude（`anthropic`）、Grok（`xai`）订阅账号登录。宿主 pi-ai 提�
 时还可使用 OpenAI 直连 ChatGPT 登录（`openai`，使用 OpenAI API 而非旧版 Codex
 后端）和 Meta Muse（`meta`）。当前主验证线 DSH `0.2.0-rc.1` 仍携带 pi-ai
 `0.85.1`，宿主依赖升级前默认保持原有三个路由。`/auth status`、`/auth login [provider]`、
-`/auth logout <provider>` 操作同一套凭据。浏览器授权会尝试自动打开页面，并在同一
+`/auth logout <provider>` 对这些 pi-ai 路由操作同一套凭据。浏览器授权会尝试自动打开页面，并在同一
 问卷中提供授权链接与手动粘贴回调 URL/代码的输入；设备码流程在轮询期间显示可复制的
 短码。无交互问卷服务的宿主会明确拒绝登录。
 
@@ -290,6 +290,36 @@ OpenAI 直连登录会按需在凭据文件同目录创建持久 UUID 文件 `de
 pi-ai 作为当前安装的 agent-host ID。状态界面只展示登录与到期信息。登录后，模型才
 出现在选择器中；同一 provider 若已由 `llm-pi-ai` 其他配置占用，OAuth 路由会拒绝
 重复注册。
+
+### DeepSeek 账号授权
+
+DSH `0.2.0-rc.1+` 的 `dsh-base` 另有宿主拥有的 `deepseekAccount` 服务和
+`deepseek-account` 模型路由。标准 profile 将它加入同一 `/provider` 账号登录分支、
+`/auth status` 与 `/login` 状态列表；也可直接运行 `/auth login deepseek-account`，
+成功后用 `/model` 选择 `deepseek-account` 下的模型。它与需要
+`DEEPSEEK_API_KEY` 的 `deepseek-official` 是**不同路由**。`/auth logout deepseek-account`
+调用宿主退登：先移除宿主凭据记录，远端撤销由宿主在后台处理。TUI 不复制 PKCE
+协议、不读取账号 token，也不把账号凭据写入上述 `dsh-auth/credentials.json`。
+DeepSeek 账号授权没有 pi-ai 的 token 到期/刷新时间；状态界面只显示已登录/未登录。
+`dsh-tui-auth.config.providers` 和 `modelOverrides` 仍只控制 pi-ai 路由，
+不用、也不能在其中填写 `deepseek-account`。
+
+浏览器回调由宿主 `webServer` 服务提供。TUI-only profile 的
+`dsh-tui-webserver` 行默认监听 `127.0.0.1` 的系统分配端口；与 Web 同时挂载时复用
+官方 `webserver` 行，不打开第二个监听器。授权链接会尝试在浏览器打开，问卷同时
+显示完整链接和复制、重开、取消操作。DeepSeek 流程必须经回调完成，**没有**手动
+粘贴授权码的回退。远程 SSH 使用本地浏览器时，把 `dsh-tui-webserver` 的 `port`
+覆盖为固定端口，并转发同一端口（例如 `ssh -L 43123:127.0.0.1:43123 ...`）：
+
+```yaml
+- id: dsh-tui-webserver
+  config:
+    host: 127.0.0.1
+    port: 43123
+```
+
+混合 Web profile 则覆盖官方 `webserver` 行。没有可用回调监听器时登录会明确报错，
+其他 pi-ai OAuth 路由不受影响。
 
 ## 组合约束
 

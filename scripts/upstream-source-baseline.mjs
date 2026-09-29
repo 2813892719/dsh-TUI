@@ -84,6 +84,14 @@ export function prepareUpstreamSourceResolver(sourceRoot) {
     join(sourceRoot, 'packages/bundle/web-app/package.json'),
     'dsh-web-app',
   )
+  const webServerSource = join(sourceRoot, 'packages/host/webserver/package.json')
+  if (existsSync(webServerSource)) {
+    copyManifest(webServerSource, join(scopeRoot, 'dsh-host-webserver'), 'dsh-host-webserver')
+  }
+  const accountProviderSource = join(sourceRoot, 'packages/credentials/deepseek-account-platform/package.json')
+  if (existsSync(accountProviderSource)) {
+    copyManifest(accountProviderSource, join(scopeRoot, 'dsh-deepseek-account-platform'), 'dsh-deepseek-account-platform')
+  }
   const resolverManifest = join(scopeRoot, 'dsh-web-app', 'package.json')
   mkdirSync(dirname(resolverManifest), { recursive: true })
   writeFileSync(resolverManifest, `${JSON.stringify({

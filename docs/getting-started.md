@@ -10,7 +10,7 @@
   交给 pnpm；pnpm 9 的传递依赖提升行为不同，会让 `dsh-working-activity`
   解析不到，表现为启动后立刻退出且几乎无报错（issue #60，见下方常见问题）。
 - 支持交互输入的终端 TTY。`dsh-tui` 不支持把 stdout 重定向后启动。
-- 运行 DeepSeek 模型时需要 `DEEPSEEK_API_KEY`；标准 profile 的订阅 OAuth 登录可在启动后用 `/provider` 或 `/auth` 完成。用自定义兼容端点时还可设置 `DEEPSEEK_BASE_URL`。
+- `deepseek-official` 模型路由需要 `DEEPSEEK_API_KEY`；DSH 0.2.0-rc.1+ 的标准 profile 也可通过 `/auth login deepseek-account` 登录独立的 DeepSeek 账号路由。其他支持的账号可用 `/provider` 或 `/auth` 登录。自定义兼容端点还可设置 `DEEPSEEK_BASE_URL`。
 
 macOS/Linux：
 
@@ -380,9 +380,9 @@ dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui@latest
 
 ### 模型启动失败或提示没有凭证
 
-若使用 DeepSeek 模型，确认启动 `dsh` 的同一个 Shell 中存在 `DEEPSEEK_API_KEY`；
-自定义端点同时检查 `DEEPSEEK_BASE_URL`。订阅模型则用 `/auth status` 检查登录
-状态，必要时重新运行 `/auth login <provider>`。
+若使用 `deepseek-official`，确认启动 `dsh` 的同一个 Shell 中存在 `DEEPSEEK_API_KEY`；
+自定义端点同时检查 `DEEPSEEK_BASE_URL`。若使用 `deepseek-account` 或订阅模型，
+用 `/auth status` 检查登录状态，必要时重新运行 `/auth login <provider>`。
 
 ### 工作状态行重复
 
