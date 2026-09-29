@@ -61,7 +61,6 @@ export class CredentialFile implements PiAiCredentialStore {
   readonly path: string
   /** One document needs one read-modify-write queue, regardless of provider. */
   private pending: Promise<void> = Promise.resolve()
-  private cache: CredentialsDocument | undefined
   private deviceId: string | undefined
 
   constructor(path: string) {
@@ -127,7 +126,7 @@ export class CredentialFile implements PiAiCredentialStore {
     fn: (current: PiAiCredential | undefined) => Promise<PiAiCredential | undefined>,
   ): Promise<PiAiCredential | undefined> {
     return this.chain(async () => {
-      const document = await this.load(true)
+      const document = await this.load()
       const current = document.providers[providerId]
       const replacement = await fn(current)
       if (replacement === undefined || replacement === current) return current
@@ -142,7 +141,7 @@ export class CredentialFile implements PiAiCredentialStore {
   /** Remove one provider's credential (logout). */
   async delete(providerId: string): Promise<void> {
     await this.chain(async () => {
-      const document = await this.load(true)
+      const document = await this.load()
       if (!(providerId in document.providers)) return
       const providers = { ...document.providers }
       delete providers[providerId]
@@ -174,16 +173,13 @@ export class CredentialFile implements PiAiCredentialStore {
     return run
   }
 
-  private async load(fresh = false): Promise<CredentialsDocument> {
-    if (!fresh && this.cache !== undefined) return this.cache
-    this.cache = undefined
+  private async load(): Promise<CredentialsDocument> {
     let text: string
     try {
       text = readFileSync(this.path, 'utf8')
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-        this.cache = EMPTY_DOCUMENT
-        return this.cache
+        return EMPTY_DOCUMENT
       }
       throw new Error(`dsh-auth: cannot read credential file ${this.path}: ${String(error)}`)
     }
@@ -213,8 +209,7 @@ export class CredentialFile implements PiAiCredentialStore {
       }
       providers[provider] = credential
     }
-    this.cache = { version: 1, providers }
-    return this.cache
+    return { version: 1, providers }
   }
 
   private async save(document: CredentialsDocument): Promise<void> {
@@ -227,6 +222,5 @@ export class CredentialFile implements PiAiCredentialStore {
     } catch (error: unknown) {
       throw new Error(`dsh-auth: cannot write credential file ${this.path}: ${String(error)}`)
     }
-    this.cache = document
   }
 }

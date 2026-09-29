@@ -70,7 +70,7 @@ export interface DshAuthApi {
    *   unknown, a login is already running, or the flow itself fails.
    */
   login(provider?: string, signal?: AbortSignal): Promise<DshAuthLoginResult>
-  /** Remove one provider's stored credential; resolves whether one existed. */
+  /** Cancel an active sign-in and remove the stored credential; resolves whether one existed. */
   logout(provider: string): Promise<boolean>
 }
 
@@ -119,7 +119,7 @@ async function chooseProvider(ask: AskFn, candidates: readonly DshAuthSignInStat
  * attempt for the same provider fails fast instead of stacking two flows.
  */
 export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
-  const inflight = new Map<string, Promise<DshAuthLoginResult>>()
+  const inflight = new Map<string, AbortController>()
   const mountedIds = (): string[] => [
     ...deps.profiles.keys(),
     ...(deps.resolveDeepSeekAccount?.() === undefined ? [] : [DEEPSEEK_ACCOUNT_PROVIDER]),
@@ -178,7 +178,11 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       if (normalized === undefined) {
         throw new Error(`dsh-auth: the ${oauth.name} flow returned an unusable credential; nothing was stored`)
       }
-      await deps.store.modify(provider, async () => normalized)
+      await deps.store.modify(provider, async () => {
+        // Logout may have cancelled the flow while this write waited for the file lock.
+        runAbort.signal.throwIfAborted()
+        return normalized
+      })
       return { provider, oauthLabel: oauth.name, expiresAt: normalized.expires }
     } finally {
       signal?.removeEventListener('abort', forwardAbort)
@@ -208,26 +212,27 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
           + 'this plugin refuses to assume a browser on this machine',
         )
       }
-      const existing = inflight.get(target)
-      if (existing !== undefined) {
+      if (inflight.has(target)) {
         throw new Error(`dsh-auth: a login for "${target}" is already running`)
       }
       const account = target === DEEPSEEK_ACCOUNT_PROVIDER ? deps.resolveDeepSeekAccount?.() : undefined
       if (target === DEEPSEEK_ACCOUNT_PROVIDER && account === undefined) {
         throw new Error(`dsh-auth: provider "${target}" is no longer mounted`)
       }
+      const cancellation = new AbortController()
+      const runSignal = signal === undefined ? cancellation.signal : AbortSignal.any([signal, cancellation.signal])
+      inflight.set(target, cancellation)
       const run = (account === undefined
-        ? loginOne(target, ask, signal)
+        ? loginOne(target, ask, runSignal)
         : (async (): Promise<DshAuthLoginResult> => {
           const callbackOrigin = deps.resolveCallbackOrigin?.()
           if (callbackOrigin === undefined) {
             throw new Error('DeepSeek sign-in needs an active Host webServer for the browser callback')
           }
-          await loginDeepSeekAccount(account, callbackOrigin, ask, signal)
+          await loginDeepSeekAccount(account, callbackOrigin, ask, runSignal)
           return { provider: target, oauthLabel: 'DeepSeek', expiresAt: undefined }
         })()
       ).finally(() => { inflight.delete(target) })
-      inflight.set(target, run)
       return run
     },
     logout: async provider => {
@@ -242,6 +247,7 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       if (!deps.profiles.has(provider)) {
         throw new Error(`dsh-auth: unknown provider "${provider}" (mounted: ${mountedIds().join(', ')})`)
       }
+      inflight.get(provider)?.abort(new Error('Login cancelled'))
       const existed = (await deps.store.read(provider)) !== undefined
       await deps.store.delete(provider)
       return existed

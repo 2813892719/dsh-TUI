@@ -226,6 +226,22 @@ try {
     && afterCrossProcessDelete.providers['meta']?.access === 'm2',
   'deleting from a stale store retains another process\'s credential')
 
+  const observer = new CredentialFile(join(root, 'external-visibility', 'credentials.json'))
+  const writer = new CredentialFile(observer.path)
+  await observer.read('xai')
+  await writer.modify('xai', async () => ({ type: 'oauth', access: 'external', refresh: 'r', expires: Date.now() + 60_000 }))
+  ok((await observer.read('xai'))?.access === 'external'
+    && (await observer.list()).some(row => row.providerId === 'xai')
+    && (await observer.describe()).some(row => row.provider === 'xai'),
+  'an existing store sees another process sign in')
+  const signedObserver = new CredentialFile(observer.path)
+  await signedObserver.read('xai')
+  await writer.delete('xai')
+  ok((await signedObserver.read('xai')) === undefined
+    && !(await signedObserver.list()).some(row => row.providerId === 'xai')
+    && !(await signedObserver.describe()).some(row => row.provider === 'xai'),
+  'an existing store sees another process sign out')
+
   let refusedWrite = ''
   try {
     await store.modify('xai', async () => ({ type: 'api_key', key: 'nope' }))
@@ -632,6 +648,33 @@ try {
   ok(await api.logout('fake'), 'logout removes the credential')
   ok(readFileSync(join(root, 'api', 'device-id'), 'utf8').trim() === loginDeviceId,
     'logout leaves the stable OpenAI installation ID intact')
+
+  let completeLateLogin
+  let lateLoginSignal
+  const lateProvider = {
+    ...fakeProvider,
+    auth: { oauth: {
+      ...fakeProvider.auth.oauth,
+      login(interaction) {
+        lateLoginSignal = interaction.signal
+        return new Promise(resolve => { completeLateLogin = resolve })
+      },
+    } },
+  }
+  const lateStore = new CredentialFile(join(root, 'late-login', 'credentials.json'))
+  const lateApi = createDshAuthApi({
+    profiles: new Map([['fake', { ...fakeProfile, piProvider: lateProvider }]]),
+    store: lateStore,
+    resolveAsk: () => fakeAsk,
+  })
+  const lateLogin = lateApi.login('fake').then(() => 'success', error => String(error))
+  ok(await settled(() => completeLateLogin !== undefined), 'late login flow started')
+  await lateApi.logout('fake')
+  completeLateLogin({ type: 'oauth', access: 'late', refresh: 'r', expires: Date.now() + 60_000 })
+  const lateResult = await lateLogin
+  ok(lateLoginSignal.aborted && lateResult !== 'success' && (await lateStore.read('fake')) === undefined,
+    'logout cancels an in-flight login and prevents its late credential write')
+
   const legacyStore = new CredentialFile(join(root, 'legacy-api', 'credentials.json'))
   const legacyProfile = {
     ...fakeProfile,
