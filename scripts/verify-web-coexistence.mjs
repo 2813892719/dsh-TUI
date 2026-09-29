@@ -107,7 +107,7 @@ for (const baseline of baselines) {
     '@deepseek-ai/dsh-tool-subagent/model-selection-settings',
   ) !== undefined
   const hasWebServer = resolvePackage('@deepseek-ai/dsh-host-webserver/package.json') !== undefined
-  const hasDeepSeekAccountProvider = resolvePackage('@deepseek-ai/dsh-deepseek-account-platform/package.json') !== undefined
+  const accountRow = { options: { id: 'deepseek-account', name: '@deepseek-ai/dsh-deepseek-account-platform' }, disabled: false }
   const basePatches = baseline.basePath === undefined ? [] : loadPatch(baseline.basePath)
   const webPatches = loadPatch(baseline.webPath)
   assert.ok(Array.isArray(basePatches), `${baseline.label}: base patch must be a top-level list`)
@@ -133,6 +133,7 @@ for (const baseline of baselines) {
   )
 
   for (const { id, name } of shared) {
+    const entries = id === 'webserver' ? [accountRow] : []
     const officialExpected = officialRows.some(row => row?.id === id && row?.name === name)
     const official = composed.find(row => row?.id === id && row?.name === name)
     assert.equal(Boolean(official), officialExpected, `${baseline.label}: official ${id} ownership drifted`)
@@ -148,19 +149,21 @@ for (const baseline of baselines) {
     const unavailable = id === 'agent-preset-registry' ? !hasRegistry
       : (id === 'agent-presets' || id === 'code-runtime') ? hasRegistry
         : id === 'subagent-model-selection-settings' ? !hasSubagentModelSelectionSettings
-          : id === 'webserver' ? !hasWebServer || !hasDeepSeekAccountProvider
+        : id === 'webserver' ? !hasWebServer
           : false
-    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled)), unavailable,
+    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, entries)), unavailable,
       `${baseline.label}: ${scopedId} must follow the installed package generation`)
-    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [{ options: { id, name }, disabled: false }])), true,
+    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [...entries, { options: { id, name }, disabled: false }])), true,
       `${baseline.label}: ${scopedId} must yield to an enabled official row`)
-    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [{ options: { id, name }, disabled: true }])), unavailable,
+    assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [...entries, { options: { id, name }, disabled: true }])), unavailable,
       `${baseline.label}: a disabled official row does not own ${scopedId}`)
     if (id === 'webserver') {
       assert.ok(tuiRow.disabled.includes("require.resolve('@deepseek-ai/dsh-host-webserver/package.json')"),
         `${baseline.label}: ${scopedId} must probe its own Host package`)
-      assert.ok(tuiRow.disabled.includes("require.resolve('@deepseek-ai/dsh-deepseek-account-platform/package.json')"),
-        `${baseline.label}: ${scopedId} must probe the Host account provider`)
+      assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled)), true,
+        `${baseline.label}: ${scopedId} must stay disabled without an account service row`)
+      assert.equal(Boolean(evaluateFor(baseline, tuiRow.disabled, [{ ...accountRow, disabled: true }])), true,
+        `${baseline.label}: ${scopedId} must stay disabled when the account service row is disabled`)
       assert.deepEqual(tuiRow.config, { host: '127.0.0.1', port: 0 },
         `${baseline.label}: TUI-only callback listener must bind an OS-assigned loopback port`)
     }

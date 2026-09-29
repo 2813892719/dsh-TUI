@@ -3,11 +3,11 @@
  * one JSON document, one credential per provider id.
  *
  * Writes are atomic (temp file + rename) with 0700 directory / 0600 file
- * permissions best-effort on every platform. All mutations go through
- * {@link CredentialFile.modify}, which serializes read-modify-write cycles
- * per provider in-process — pi-ai runs its OAuth refresh *inside* `modify`,
- * so the exclusion here is what keeps concurrent requests from
- * double-refreshing a rotated token. The file is the single source of truth;
+ * permissions best-effort on every platform. Mutations share one queue for
+ * the whole file in-process; pi-ai runs its OAuth refresh *inside*
+ * {@link CredentialFile.modify}, so the exclusion also keeps concurrent
+ * requests from double-refreshing a rotated token. The file is the single
+ * source of truth;
  * nothing here ever logs token material, and {@link CredentialFile.describe}
  * reports only non-secret metadata for status surfaces.
  *
@@ -58,8 +58,8 @@ const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
  */
 export class CredentialFile implements PiAiCredentialStore {
   readonly path: string
-  /** Per-provider operation chains: modify/delete never overlap for one id. */
-  private readonly chains = new Map<string, Promise<unknown>>()
+  /** One document needs one read-modify-write queue, regardless of provider. */
+  private pending: Promise<void> = Promise.resolve()
   private cache: CredentialsDocument | undefined
   private deviceId: string | undefined
 
@@ -125,7 +125,7 @@ export class CredentialFile implements PiAiCredentialStore {
     providerId: string,
     fn: (current: PiAiCredential | undefined) => Promise<PiAiCredential | undefined>,
   ): Promise<PiAiCredential | undefined> {
-    return this.chain(providerId, async () => {
+    return this.chain(async () => {
       const document = await this.load()
       const current = document.providers[providerId]
       const replacement = await fn(current)
@@ -140,7 +140,7 @@ export class CredentialFile implements PiAiCredentialStore {
 
   /** Remove one provider's credential (logout). */
   async delete(providerId: string): Promise<void> {
-    await this.chain(providerId, async () => {
+    await this.chain(async () => {
       const document = await this.load()
       if (!(providerId in document.providers)) return
       const providers = { ...document.providers }
@@ -162,10 +162,10 @@ export class CredentialFile implements PiAiCredentialStore {
       }))
   }
 
-  /** Run one operation after every earlier operation for the same provider. */
-  private chain<T>(provider: string, operation: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(provider) ?? Promise.resolve()).then(operation, operation)
-    this.chains.set(provider, run.then(() => undefined, () => undefined))
+  /** Run one mutation after every earlier mutation of this document. */
+  private chain<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.pending.then(operation, operation)
+    this.pending = run.then(() => undefined, () => undefined)
     return run
   }
 

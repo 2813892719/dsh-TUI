@@ -175,6 +175,20 @@ try {
   ok(JSON.stringify(observed) === JSON.stringify([undefined, 'x1']), `concurrent modifies serialize, each seeing the last write (saw ${JSON.stringify(observed)})`)
   ok((await store.read('xai'))?.access === 'x2', 'the last modify wins on disk')
 
+  // Different providers share one JSON document. Their writes must not both
+  // start from the same snapshot and let the later rename erase the first.
+  await Promise.all([
+    store.modify('openai-codex', async () => {
+      await Promise.resolve()
+      return { type: 'oauth', access: 'c1', refresh: 'r', expires: Date.now() + 60_000 }
+    }),
+    store.modify('meta', async () => ({ type: 'oauth', access: 'm1', refresh: 'r', expires: Date.now() + 60_000 })),
+  ])
+  const concurrentDocument = JSON.parse(readFileSync(store.path, 'utf8'))
+  ok(concurrentDocument.providers['openai-codex']?.access === 'c1'
+    && concurrentDocument.providers['meta']?.access === 'm1',
+  'concurrent writes to different providers retain both credentials on disk')
+
   let refusedWrite = ''
   try {
     await store.modify('xai', async () => ({ type: 'api_key', key: 'nope' }))
@@ -570,7 +584,6 @@ try {
     profiles: new Map([['fake', fakeProfile]]),
     store: apiStore,
     resolveAsk: () => fakeAsk,
-    logger: { warn() {} },
   })
   ok((await api.providers())[0].signedIn === false, 'status reports unsigned providers')
   const login = await api.login('fake')
@@ -595,7 +608,7 @@ try {
   }
   const legacyApi = createDshAuthApi({
     profiles: new Map([['fake', legacyProfile]]), store: legacyStore,
-    resolveAsk: () => fakeAsk, logger: { warn() {} },
+    resolveAsk: () => fakeAsk,
   })
   await legacyApi.login('fake')
   ok(!existsSync(join(root, 'legacy-api', 'device-id')),
@@ -689,15 +702,15 @@ try {
     resolveAsk: () => fakeAsk,
     resolveDeepSeekAccount: () => facadeAccount,
     resolveCallbackOrigin: () => callbackOrigin,
-    logger: { warn() {} },
   })
   const accountRows = await accountApi.providers()
-  ok(accountRows.length === 2 && accountRows[1].provider === DEEPSEEK_ACCOUNT_PROVIDER
-    && accountRows[1].signedIn === false && accountRows[1].expiresAt === undefined,
-  'the facade appends the Host account without registering a second pi-ai route')
+  ok(accountRows.length === 2 && accountRows[0].provider === DEEPSEEK_ACCOUNT_PROVIDER
+    && accountRows[1].provider === 'fake'
+    && accountRows[0].signedIn === false && accountRows[0].expiresAt === undefined,
+  'the facade lists the Host account first without registering a second pi-ai route')
   const accountResult = await accountApi.login(DEEPSEEK_ACCOUNT_PROVIDER)
   ok(accountResult.expiresAt === undefined && facadeAccount.calls.starts[0].origin === callbackOrigin
-    && (await accountApi.providers())[1].signedIn === true,
+    && (await accountApi.providers())[0].signedIn === true,
   'facade login delegates to the Host and reports a non-expiring account grant')
   ok(await accountApi.logout(DEEPSEEK_ACCOUNT_PROVIDER)
     && facadeAccount.calls.signOuts.length === 1
@@ -736,12 +749,12 @@ try {
     ok(registeredCommands.length === 1 && registeredCommands[0].name === 'auth',
       'the internal entry registers /auth')
     const service = ctx.get('dshAuth')
-    ok((await service?.api?.providers())?.[0]?.provider === 'openai-codex',
-      'the internal entry exposes ctx.dshAuth for /provider and /login')
-    ok((await service?.api?.providers())?.some(row => row.provider === DEEPSEEK_ACCOUNT_PROVIDER),
-      'the public entry discovers the Host account service at runtime')
+    const mountedRows = await service?.api?.providers()
+    ok(mountedRows?.[0]?.provider === DEEPSEEK_ACCOUNT_PROVIDER
+      && mountedRows?.[1]?.provider === 'openai-codex',
+    'the public entry exposes ctx.dshAuth with the Host account first')
     const status = await registeredCommands[0].handler({ rawInput: 'status', signal: new AbortController().signal })
-    ok(status.kind === 'success' && status.text.includes('deepseek-account')
+    ok(status.kind === 'success' && status.text.split('\n')[1]?.includes('deepseek-account')
       && status.text.includes('not signed in') && !status.text.includes('access')
       && !status.text.includes('1970'),
     '/auth status returns masked account metadata without a fake token expiry')

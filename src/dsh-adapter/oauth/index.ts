@@ -226,7 +226,6 @@ export function apply(ctx: Context, config: Config): void {
       const questions = ctx.get('userQuestions')
       return questions === undefined ? undefined : request => questions.ask(request)
     },
-    logger: ctx.logger,
   })
   service.api = api
 

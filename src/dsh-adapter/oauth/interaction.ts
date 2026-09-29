@@ -74,8 +74,8 @@ interface WaitingView {
   copyText: string
   reopenLabel: string
   cancelLabel: string
-  /** What a reopen action opens, when this view offers one. */
-  reopenUrl: string | undefined
+  /** What the reopen action opens. */
+  reopenUrl: string
 }
 
 function authUrlView(url: string, instructions: string | undefined, opened: boolean, notice: string | undefined): WaitingView {
@@ -199,7 +199,7 @@ export class QuestionBridge implements PiAiAuthInteraction {
         actionNote = t(copied ? 'oauth-copied' : 'oauth-copy-failed')
         continue
       }
-      if (answer.selected === browserView.reopenLabel && browserView.reopenUrl !== undefined) {
+      if (answer.selected === browserView.reopenLabel) {
         const opened = this.openUrl(browserView.reopenUrl)
         actionNote = t(opened ? 'oauth-reopened' : 'oauth-open-failed')
         continue
@@ -276,7 +276,7 @@ export class QuestionBridge implements PiAiAuthInteraction {
           detail: body,
           options: [
             { label: view.copyLabel },
-            ...(view.reopenUrl === undefined ? [] : [{ label: view.reopenLabel }]),
+            { label: view.reopenLabel },
             { label: view.cancelLabel },
           ],
         }],
@@ -304,7 +304,7 @@ export class QuestionBridge implements PiAiAuthInteraction {
         body = `${t(copied ? 'oauth-copied' : 'oauth-copy-failed')}\n${view.body}`
         continue
       }
-      if (response.selected === view.reopenLabel && view.reopenUrl !== undefined) {
+      if (response.selected === view.reopenLabel) {
         const opened = this.openUrl(view.reopenUrl)
         body = `${t(opened ? 'oauth-reopened' : 'oauth-open-failed')}\n${view.body}`
       }

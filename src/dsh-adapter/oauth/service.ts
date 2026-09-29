@@ -11,7 +11,7 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
-import { asStoredCredential, CredentialFile, type StoredOAuthCredential } from './credentials.js'
+import { asStoredCredential, CredentialFile } from './credentials.js'
 import { oauthOf } from './profiles.js'
 import { QuestionBridge, type AskFn } from './interaction.js'
 import { loginOAuth, type PiAiProvider } from './pi-ai.js'
@@ -93,7 +93,6 @@ export interface DshAuthApiDeps {
   resolveDeepSeekAccount?: () => DeepSeekAccountAuth | undefined
   /** The active Host callback listener's browser-accessible loopback origin. */
   resolveCallbackOrigin?: () => string
-  logger: { warn(message: string): void }
 }
 
 /** Select a provider interactively among `candidates`. */
@@ -144,7 +143,7 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
     const account = deps.resolveDeepSeekAccount?.()
     if (account === undefined) return piAi
     const state = await account.getState()
-    return [...piAi, {
+    return [{
       provider: DEEPSEEK_ACCOUNT_PROVIDER,
       label: 'DeepSeek Account',
       oauthLabel: 'DeepSeek',
@@ -152,7 +151,7 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       signedIn: state.status === 'credential-stored',
       expiresAt: undefined,
       expired: false,
-    }]
+    }, ...piAi]
   }
 
   const loginOne = async (provider: string, ask: AskFn, signal: AbortSignal | undefined): Promise<DshAuthLoginResult> => {
@@ -179,9 +178,8 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       if (normalized === undefined) {
         throw new Error(`dsh-auth: the ${oauth.name} flow returned an unusable credential; nothing was stored`)
       }
-      const stored: StoredOAuthCredential = normalized
-      await deps.store.modify(provider, async () => stored)
-      return { provider, oauthLabel: oauth.name, expiresAt: stored.expires }
+      await deps.store.modify(provider, async () => normalized)
+      return { provider, oauthLabel: oauth.name, expiresAt: normalized.expires }
     } finally {
       signal?.removeEventListener('abort', forwardAbort)
       await bridge.settle()
