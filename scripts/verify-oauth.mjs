@@ -11,7 +11,8 @@
  * bridge (select/text mapping, browser callback/manual-input single surface,
  * waiting-panel cancel wiring), and the service api (status/login/logout
  * over a fabricated flow), the Host-owned DeepSeek account handoff (state,
- * callback origin, browser panel, cancellation, masked command results,
+ * callback origin, browser panel, cancellation including logout during
+ * pending callback resolution, masked command results,
  * profile-only update fallback listener and cleanup),
  * plus the public ./oauth entry's
  * route/command/service mount and lifecycle cleanup.
@@ -851,6 +852,34 @@ try {
     && (await apiStore.read(DEEPSEEK_ACCOUNT_PROVIDER)) === undefined,
   'facade logout calls Host signOut and never stores the account grant in pi-ai credentials')
   stopCoupons()
+
+  const pendingAccount = fakeDeepSeekAccount()
+  pendingAccount.startSignIn = async (...args) => {
+    pendingAccount.calls.starts.push(args)
+    throw new Error('late sign-in after logout')
+  }
+  let releaseCallbackOrigin
+  let callbackOriginRequested = false
+  const pendingCallbackOrigin = new Promise(resolve => { releaseCallbackOrigin = resolve })
+  const pendingAccountApi = createDshAuthApi({
+    profiles: new Map(), store: apiStore,
+    resolveAsk: () => fakeAsk,
+    resolveDeepSeekAccount: () => pendingAccount,
+    resolveCallbackOrigin: () => {
+      callbackOriginRequested = true
+      return pendingCallbackOrigin
+    },
+  })
+  const pendingLogin = pendingAccountApi.login(DEEPSEEK_ACCOUNT_PROVIDER)
+    .then(() => 'success', error => error instanceof Error ? error.message : String(error))
+  ok(await settled(() => callbackOriginRequested), 'DeepSeek login awaits callback listener startup')
+  await pendingAccountApi.logout(DEEPSEEK_ACCOUNT_PROVIDER)
+  releaseCallbackOrigin(callbackOrigin)
+  const pendingOutcome = await pendingLogin
+  ok(pendingAccount.calls.signOuts.length === 1
+    && pendingAccount.calls.starts.length === 0
+    && pendingOutcome.includes('Login cancelled'),
+  'logout completes before callback resolution and prevents a later Host sign-in attempt')
 
   const otherCoupons = new WhaleCouponStore()
   const stopOtherCoupons = otherCoupons.subscribe(() => undefined)
