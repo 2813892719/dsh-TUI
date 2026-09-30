@@ -94,7 +94,7 @@ export interface DshAuthApiDeps {
   /** Optional upstream account service; older hosts have only pi-ai routes. */
   resolveDeepSeekAccount?: () => DeepSeekAccountAuth | undefined
   /** The active Host callback listener's browser-accessible loopback origin. */
-  resolveCallbackOrigin?: () => string
+  resolveCallbackOrigin?: () => string | Promise<string>
   coupons?: WhaleCouponStore
 }
 
@@ -228,7 +228,9 @@ export function createDshAuthApi(deps: DshAuthApiDeps): DshAuthApi {
       const run = (account === undefined
         ? loginOne(target, ask, runSignal)
         : (async (): Promise<DshAuthLoginResult> => {
-          const callbackOrigin = deps.resolveCallbackOrigin?.()
+          runSignal.throwIfAborted()
+          const callbackOrigin = await deps.resolveCallbackOrigin?.()
+          runSignal.throwIfAborted()
           if (callbackOrigin === undefined) {
             throw new Error('DeepSeek sign-in needs an active Host webServer for the browser callback')
           }
